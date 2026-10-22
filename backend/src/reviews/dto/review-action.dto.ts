@@ -1,4 +1,10 @@
-import { IsIn, IsNotEmpty, IsOptional, IsString } from "class-validator";
+import {
+  IsIn,
+  IsNotEmpty,
+  IsObject,
+  IsOptional,
+  IsString,
+} from "class-validator";
 
 export class ReviewActionDto {
   @IsString()
@@ -12,4 +18,22 @@ export class ReviewActionDto {
   @IsString()
   @IsOptional()
   comment?: string;
+
+  @IsObject()
+  @IsOptional()
+  metadata?: {
+    title?: string;
+    titleVi?: string;
+    titleEn?: string;
+    thesisAdvisors?: string;
+    major?: string;
+    thesisYear?: string;
+    abstract?: string;
+    keywords?: string;
+    publisher?: string;
+    language?: string;
+    documentType?: string;
+    description?: string;
+    extraMetadata?: Record<string, string>;
+  };
 }

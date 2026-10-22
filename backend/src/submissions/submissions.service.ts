@@ -4,7 +4,7 @@ import {
   Injectable,
   InternalServerErrorException,
   Logger,
-  NotFoundException
+  NotFoundException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
@@ -25,18 +25,27 @@ import {
   mergeThesisMetadata,
   normalizeThesisMetadata,
   THESIS_METADATA_SELECT,
-  type NormalizedThesisMetadata
+  type NormalizedThesisMetadata,
 } from "./submission-metadata";
 import { SubmissionFormFieldsService } from "./submission-form-fields.service";
 import { GroupsService } from "../workflow/groups.service";
 import { WorkflowService } from "../workflow/workflow.service";
-import { THESIS_MAX_FILE_SIZE_MB, isThesisPdfUpload } from "./submission-limits";
+import {
+  THESIS_MAX_FILE_SIZE_MB,
+  isThesisPdfUpload,
+} from "./submission-limits";
 import {
   assertStudentSubmissionCapability,
   assertSubmissionOwnership,
   getStudentSubmissionCapabilities,
-  type StudentSubmissionAction
+  type StudentSubmissionAction,
 } from "./submission-student-access";
+import {
+  SubmissionStatus,
+  WorkflowEventType,
+  WorkflowRole,
+} from "src/common/constants/workflow.constants";
+import { UpdateMetadataDto } from "./dto/update-metadata.dto";
 
 const uploadsRoot = path.join(process.cwd(), "uploads", "submissions");
 
@@ -59,7 +68,7 @@ export class SubmissionsService {
     private readonly formFieldsService: SubmissionFormFieldsService,
     private readonly workflowMail: WorkflowMailService,
     private readonly workflow: WorkflowService,
-    private readonly groups: GroupsService
+    private readonly groups: GroupsService,
   ) {}
 
   private isAdminActor(actor: JwtPayload): boolean {
@@ -78,12 +87,19 @@ export class SubmissionsService {
     }
   }
 
-  private assertPeriodMatchesStudentFaculty(student: { facultyId: string | null }, periodFacultyId: string) {
+  private assertPeriodMatchesStudentFaculty(
+    student: { facultyId: string | null },
+    periodFacultyId: string,
+  ) {
     if (!student.facultyId) {
-      throw new BadRequestException("This student is not assigned to a faculty");
+      throw new BadRequestException(
+        "This student is not assigned to a faculty",
+      );
     }
     if (periodFacultyId !== student.facultyId) {
-      throw new BadRequestException("The submission period must belong to the student's faculty");
+      throw new BadRequestException(
+        "The submission period must belong to the student's faculty",
+      );
     }
   }
 
@@ -103,7 +119,7 @@ export class SubmissionsService {
 
   private async resolveConfigurableFields(
     dto: Record<string, unknown>,
-    options: { required: boolean; existingExtra?: Record<string, string> }
+    options: { required: boolean; existingExtra?: Record<string, string> },
   ) {
     return this.formFieldsService.resolveMetadataValues(dto, options);
   }
@@ -114,9 +130,12 @@ export class SubmissionsService {
 
   private async thesisMaxFileSizeMb(): Promise<number> {
     const result = await this.db.query<{ value: string }>(
-      `SELECT value FROM system_settings WHERE key = 'thesis_max_file_size_mb' LIMIT 1`
+      `SELECT value FROM system_settings WHERE key = 'thesis_max_file_size_mb' LIMIT 1`,
     );
-    const parsed = Number.parseInt(String(result.rows[0]?.value ?? "").trim(), 10);
+    const parsed = Number.parseInt(
+      String(result.rows[0]?.value ?? "").trim(),
+      10,
+    );
     if (!Number.isFinite(parsed) || parsed <= 0) {
       return THESIS_MAX_FILE_SIZE_MB;
     }
@@ -137,10 +156,14 @@ export class SubmissionsService {
   private async assertStudentMaySubmit(
     client: PoolClient,
     studentId: string,
-    options: { excludeSubmissionId?: string } = {}
+    options: { excludeSubmissionId?: string } = {},
   ) {
     const { excludeSubmissionId } = options;
-    const result = await client.query<{ id: string; status: string; student_id: string }>(
+    const result = await client.query<{
+      id: string;
+      status: string;
+      student_id: string;
+    }>(
       `SELECT s.id::text AS id, s.status, s.student_id::text AS student_id
        FROM submissions s
        WHERE s.status <> 'draft'
@@ -154,7 +177,7 @@ export class SubmissionsService {
            )
          )
        ORDER BY s.created_at DESC`,
-      [studentId]
+      [studentId],
     );
 
     for (const row of result.rows) {
@@ -163,7 +186,7 @@ export class SubmissionsService {
       if (excludeSubmissionId && row.id === excludeSubmissionId) {
         if (!isOwnSubmit) {
           throw new BadRequestException(
-            "Only the submitting student can resubmit this thesis"
+            "Only the submitting student can resubmit this thesis",
           );
         }
         continue;
@@ -171,18 +194,21 @@ export class SubmissionsService {
 
       if (isOwnSubmit) {
         throw new BadRequestException(
-          "You already have a submitted thesis. Only one thesis can be submitted per student"
+          "You already have a submitted thesis. Only one thesis can be submitted per student",
         );
       }
 
       throw new BadRequestException(
-        "You are already listed as an author on a submitted thesis, so you cannot submit another thesis"
+        "You are already listed as an author on a submitted thesis, so you cannot submit another thesis",
       );
     }
   }
 
   /** Co-authors on a submitted thesis cannot create or keep a personal draft. */
-  private async assertStudentMayHaveDraft(client: PoolClient, studentId: string) {
+  private async assertStudentMayHaveDraft(
+    client: PoolClient,
+    studentId: string,
+  ) {
     const result = await client.query<{ id: string }>(
       `SELECT s.id::text AS id
        FROM submissions s
@@ -197,11 +223,11 @@ export class SubmissionsService {
            )
          )
        LIMIT 1`,
-      [studentId]
+      [studentId],
     );
     if (result.rows[0]) {
       throw new BadRequestException(
-        "You are already listed as an author on a submitted thesis, so you cannot create or edit a draft"
+        "You are already listed as an author on a submitted thesis, so you cannot create or edit a draft",
       );
     }
   }
@@ -210,7 +236,7 @@ export class SubmissionsService {
   private async deleteDraftsForAuthors(
     client: PoolClient,
     authorIds: string[],
-    excludeSubmissionId: string
+    excludeSubmissionId: string,
   ) {
     if (authorIds.length === 0) {
       return;
@@ -221,14 +247,16 @@ export class SubmissionsService {
        WHERE status = 'draft'
          AND student_id = ANY($1::text[])
          AND id <> $2::uuid`,
-      [authorIds, excludeSubmissionId]
+      [authorIds, excludeSubmissionId],
     );
     for (const draft of drafts.rows) {
       const files = await client.query<{ file_url: string }>(
         `SELECT file_url FROM submission_files WHERE submission_id = $1::uuid`,
-        [draft.id]
+        [draft.id],
       );
-      await client.query(`DELETE FROM submissions WHERE id = $1::uuid`, [draft.id]);
+      await client.query(`DELETE FROM submissions WHERE id = $1::uuid`, [
+        draft.id,
+      ]);
       for (const file of files.rows) {
         await this.deleteFileSilently(file.file_url);
       }
@@ -244,7 +272,7 @@ export class SubmissionsService {
   private async assertAuthorsAvailableForSubmission(
     client: PoolClient,
     authorIds: string[],
-    excludeSubmissionId?: string
+    excludeSubmissionId?: string,
   ) {
     for (const authorId of authorIds) {
       const result = await client.query<{ id: string }>(
@@ -262,20 +290,23 @@ export class SubmissionsService {
            )
            AND ($2::uuid IS NULL OR s.id <> $2::uuid)
          LIMIT 1`,
-        [authorId, excludeSubmissionId ?? null]
+        [authorId, excludeSubmissionId ?? null],
       );
       if (result.rows[0]) {
         throw new BadRequestException(
-          "One or more selected authors are already on another submitted thesis and cannot be included"
+          "One or more selected authors are already on another submitted thesis and cannot be included",
         );
       }
     }
   }
 
-  private async loadReviewDecisions(client: PoolClient, submissionId: string): Promise<string[]> {
+  private async loadReviewDecisions(
+    client: PoolClient,
+    submissionId: string,
+  ): Promise<string[]> {
     const result = await client.query<{ decision: string }>(
       `SELECT decision FROM reviews WHERE submission_id = $1::uuid`,
-      [submissionId]
+      [submissionId],
     );
     return result.rows.map((row) => row.decision);
   }
@@ -284,19 +315,25 @@ export class SubmissionsService {
     client: PoolClient,
     submissionId: string,
     studentId: string,
-    action: StudentSubmissionAction
+    action: StudentSubmissionAction,
   ): Promise<{ status: string }> {
     const existing = await client.query<{ student_id: string; status: string }>(
       `SELECT student_id, status FROM submissions WHERE id = $1::uuid LIMIT 1 FOR UPDATE`,
-      [submissionId]
+      [submissionId],
     );
     const row = existing.rows[0];
     if (!row) {
       throw new NotFoundException("Submission not found");
     }
     assertSubmissionOwnership(studentId, row.student_id);
-    const reviewDecisions = await this.loadReviewDecisions(client, submissionId);
-    const capabilities = getStudentSubmissionCapabilities(row.status, reviewDecisions);
+    const reviewDecisions = await this.loadReviewDecisions(
+      client,
+      submissionId,
+    );
+    const capabilities = getStudentSubmissionCapabilities(
+      row.status,
+      reviewDecisions,
+    );
     assertStudentSubmissionCapability(capabilities, action);
     return { status: row.status };
   }
@@ -306,11 +343,11 @@ export class SubmissionsService {
       const constraint = error.constraint || "";
       if (constraint.includes("one_draft")) {
         throw new BadRequestException(
-          "You already have a draft. Update your existing draft instead of creating a new one"
+          "You already have a draft. Update your existing draft instead of creating a new one",
         );
       }
       throw new BadRequestException(
-        "You already have a submitted thesis. Only one thesis can be in review at a time"
+        "You already have a submitted thesis. Only one thesis can be in review at a time",
       );
     }
     throw error;
@@ -319,7 +356,7 @@ export class SubmissionsService {
   async createSubmission(
     actor: JwtPayload,
     dto: CreateSubmissionDto,
-    thesisFile: UploadedFile | undefined
+    thesisFile: UploadedFile | undefined,
   ) {
     this.assertCanSubmitForStudent(actor, dto.studentId);
 
@@ -328,14 +365,14 @@ export class SubmissionsService {
        WHERE student_id = $1 AND status = 'draft'
        ORDER BY created_at DESC
        LIMIT 1`,
-      [dto.studentId]
+      [dto.studentId],
     );
     if (existingDraft.rows[0]?.id) {
       return this.submitSubmission(
         actor,
         existingDraft.rows[0].id,
         dto as unknown as SaveDraftDto,
-        thesisFile
+        thesisFile,
       );
     }
 
@@ -352,11 +389,13 @@ export class SubmissionsService {
     if (!student || student.role !== "student") {
       throw new BadRequestException("Invalid student account");
     }
-    const meta = normalizeThesisMetadata(dto, student.username, { required: false });
+    const meta = normalizeThesisMetadata(dto, student.username, {
+      required: false,
+    });
     await this.assertConfiguredMetadata(meta);
     const formValues = await this.resolveConfigurableFields(
       { ...(dto.metadata || {}), ...dto, abstract: dto.abstract },
-      { required: true }
+      { required: true },
     );
     const dateIssued = formValues.columns.date_issued ?? meta.dateIssued;
     const publisher = formValues.columns.publisher ?? meta.publisher;
@@ -368,8 +407,15 @@ export class SubmissionsService {
 
     const authorsEnabled = await this.fieldActive("authorIds", true);
     const authorsNative = await this.usesNative("authorIds", "select");
-    const uniqueAuthorIds = authorsEnabled && authorsNative ? Array.from(new Set(dto.authorIds ?? [])) : [];
-    if (authorsNative && (await this.fieldMust("authorIds", true)) && uniqueAuthorIds.length === 0) {
+    const uniqueAuthorIds =
+      authorsEnabled && authorsNative
+        ? Array.from(new Set(dto.authorIds ?? []))
+        : [];
+    if (
+      authorsNative &&
+      (await this.fieldMust("authorIds", true)) &&
+      uniqueAuthorIds.length === 0
+    ) {
       throw new BadRequestException("At least one author is required");
     }
     if (!authorsNative && authorsEnabled) {
@@ -395,15 +441,21 @@ export class SubmissionsService {
     }
 
     if (!uniqueAuthorIds.includes(dto.studentId)) {
-      throw new BadRequestException("Submitting student must be included in authors");
+      throw new BadRequestException(
+        "Submitting student must be included in authors",
+      );
     }
 
-    const authorSnapshot = authorUsers.map((user) => user.displayName || user.username).join("; ");
+    const authorSnapshot = authorUsers
+      .map((user) => user.displayName || user.username)
+      .join("; ");
 
     const reviewersEnabled = await this.fieldActive("reviewerIds", true);
     const reviewersNative = await this.usesNative("reviewerIds", "select");
     const uniqueReviewerIds =
-      reviewersEnabled && reviewersNative ? Array.from(new Set(dto.reviewerIds ?? [])) : [];
+      reviewersEnabled && reviewersNative
+        ? Array.from(new Set(dto.reviewerIds ?? []))
+        : [];
     if (!reviewersNative && reviewersEnabled) {
       const reviewerText = (dto.reviewerIds ?? []).join(", ").trim();
       if ((await this.fieldMust("reviewerIds", true)) && !reviewerText) {
@@ -412,7 +464,10 @@ export class SubmissionsService {
       if (reviewerText) {
         extraMetadata.reviewerIds = reviewerText;
       }
-    } else if ((await this.fieldMust("reviewerIds", true)) && uniqueReviewerIds.length === 0) {
+    } else if (
+      (await this.fieldMust("reviewerIds", true)) &&
+      uniqueReviewerIds.length === 0
+    ) {
       throw new BadRequestException("At least one reviewer is required");
     }
     await this.groups.assertReviewersAllowed(dto.studentId, uniqueReviewerIds);
@@ -426,11 +481,16 @@ export class SubmissionsService {
       reviewerUsers.push(reviewerUser);
     }
 
-    const reviewerSnapshot = reviewerUsers.map((user) => user.displayName || user.username).join("; ");
+    const reviewerSnapshot = reviewerUsers
+      .map((user) => user.displayName || user.username)
+      .join("; ");
 
     const periodEnabled = await this.fieldActive("submissionPeriodId", true);
     const periodNative = await this.usesNative("submissionPeriodId", "select");
-    if ((await this.fieldMust("submissionPeriodId", true)) && !dto.submissionPeriodId?.trim()) {
+    if (
+      (await this.fieldMust("submissionPeriodId", true)) &&
+      !dto.submissionPeriodId?.trim()
+    ) {
       throw new BadRequestException("Submission period is required");
     }
     let period: {
@@ -444,13 +504,19 @@ export class SubmissionsService {
       universityName: "",
       facultyName: "",
       semesterName: "",
-      facultyId: student.facultyId || ""
+      facultyId: student.facultyId || "",
     };
     if (periodEnabled && periodNative && dto.submissionPeriodId) {
-      const resolved = await this.submissionPeriodsService.resolveOpenPeriod(dto.submissionPeriodId);
+      const resolved = await this.submissionPeriodsService.resolveOpenPeriod(
+        dto.submissionPeriodId,
+      );
       this.assertPeriodMatchesStudentFaculty(student, resolved.facultyId);
       period = resolved;
-    } else if (periodEnabled && !periodNative && dto.submissionPeriodId?.trim()) {
+    } else if (
+      periodEnabled &&
+      !periodNative &&
+      dto.submissionPeriodId?.trim()
+    ) {
       extraMetadata.submissionPeriodId = dto.submissionPeriodId.trim();
     }
 
@@ -460,17 +526,23 @@ export class SubmissionsService {
 
     const savedFiles = [];
     if (thesisFile) {
-      const thesisFilePath = await this.moveUploadedFile(thesisFile, targetDirectory);
+      const thesisFilePath = await this.moveUploadedFile(
+        thesisFile,
+        targetDirectory,
+      );
       savedFiles.push({
         id: randomUUID(),
         submission_id: submissionId,
         file_name: thesisFile.originalname,
         file_url: thesisFilePath,
-        file_type: "thesis"
+        file_type: "thesis",
       });
     }
 
-    let placed: { status: string; role: string } = { status: "reviewing", role: "reviewer" };
+    let placed: { status: string; role: string } = {
+      status: "reviewing",
+      role: "reviewer",
+    };
     try {
       const client = await this.db.connect();
       try {
@@ -508,8 +580,8 @@ export class SubmissionsService {
             documentType,
             language,
             description,
-            JSON.stringify(extraMetadata)
-          ]
+            JSON.stringify(extraMetadata),
+          ],
         );
         await client.query(
           `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
@@ -537,10 +609,12 @@ export class SubmissionsService {
               universityName: period.universityName,
               facultyName: period.facultyName,
               semesterName: period.semesterName,
-              submittedOnBehalf: this.isAdminActor(actor) ? dto.studentId : undefined
+              submittedOnBehalf: this.isAdminActor(actor)
+                ? dto.studentId
+                : undefined,
             }),
-            actor.role
-          ]
+            actor.role,
+          ],
         );
 
         let sortOrder = 0;
@@ -548,20 +622,30 @@ export class SubmissionsService {
           await client.query(
             `INSERT INTO submission_authors (submission_id, user_id, sort_order)
              VALUES ($1, $2, $3)`,
-            [submissionId, authorId, sortOrder]
+            [submissionId, authorId, sortOrder],
           );
           sortOrder += 1;
         }
 
         await this.replaceReviewers(client, submissionId, uniqueReviewerIds);
 
-        await this.deleteDraftsForAuthors(client, uniqueAuthorIds, submissionId);
+        await this.deleteDraftsForAuthors(
+          client,
+          uniqueAuthorIds,
+          submissionId,
+        );
 
         for (const file of savedFiles) {
           await client.query(
             `INSERT INTO submission_files (id, submission_id, file_name, file_url, file_type)
              VALUES ($1, $2, $3, $4, $5)`,
-            [file.id, file.submission_id, file.file_name, file.file_url, file.file_type]
+            [
+              file.id,
+              file.submission_id,
+              file.file_name,
+              file.file_url,
+              file.file_type,
+            ],
           );
         }
         placed = await this.workflow.snapshot(client, submissionId);
@@ -583,26 +667,30 @@ export class SubmissionsService {
             ? error.message
             : "Unknown error";
       throw new InternalServerErrorException(
-        `Unable to store submission: ${message}`
+        `Unable to store submission: ${message}`,
       );
     }
 
     if (placed.role === "reviewer") {
       this.workflowMail.notifySafely("reviewer_assigned", () =>
-        this.workflowMail.notifyReviewersOnSubmit(submissionId)
+        this.workflowMail.notifyReviewersOnSubmit(submissionId),
       );
     }
     this.workflowMail.notifySafely("student_submitted", () =>
-      this.workflowMail.notifyStudentOnSubmitted(submissionId, false)
+      this.workflowMail.notifyStudentOnSubmitted(submissionId, false),
     );
 
     return {
       id: submissionId,
-      status: placed.status
+      status: placed.status,
     };
   }
 
-  async saveDraft(actor: JwtPayload, dto: SaveDraftDto, thesisFile?: UploadedFile) {
+  async saveDraft(
+    actor: JwtPayload,
+    dto: SaveDraftDto,
+    thesisFile?: UploadedFile,
+  ) {
     this.assertCanSubmitForStudent(actor, dto.studentId);
 
     const lockClient = await this.db.connect();
@@ -617,7 +705,7 @@ export class SubmissionsService {
        WHERE student_id = $1 AND status = 'draft'
        ORDER BY created_at DESC
        LIMIT 1`,
-      [dto.studentId]
+      [dto.studentId],
     );
     const draftId = existingDraft.rows[0]?.id;
     if (draftId) {
@@ -632,10 +720,12 @@ export class SubmissionsService {
     if (!student || student.role !== "student") {
       throw new BadRequestException("Invalid student account");
     }
-    const meta = normalizeThesisMetadata(dto, student.username, { required: false });
+    const meta = normalizeThesisMetadata(dto, student.username, {
+      required: false,
+    });
     const formValues = await this.resolveConfigurableFields(
       { ...(dto.metadata || {}), ...dto, abstract: dto.abstract },
-      { required: false }
+      { required: false },
     );
     const dateIssued = formValues.columns.date_issued ?? meta.dateIssued;
     const publisher = formValues.columns.publisher ?? meta.publisher;
@@ -645,16 +735,21 @@ export class SubmissionsService {
     const abstract = formValues.columns.abstract ?? dto.abstract?.trim() ?? "";
     const extraMetadata = formValues.extra;
 
-    const { authorIds, authorSnapshot, reviewerIds, reviewerSnapshot } = await this.resolveAuthorsAndReviewers(
-      dto.studentId,
-      dto.authorIds,
-      dto.reviewerIds,
-      { reviewersRequired: false }
-    );
+    const { authorIds, authorSnapshot, reviewerIds, reviewerSnapshot } =
+      await this.resolveAuthorsAndReviewers(
+        dto.studentId,
+        dto.authorIds,
+        dto.reviewerIds,
+        { reviewersRequired: false },
+      );
 
-    let periodContext: Awaited<ReturnType<SubmissionPeriodsService["resolveOpenPeriod"]>> | null = null;
+    let periodContext: Awaited<
+      ReturnType<SubmissionPeriodsService["resolveOpenPeriod"]>
+    > | null = null;
     if (dto.submissionPeriodId) {
-      periodContext = await this.submissionPeriodsService.resolveOpenPeriod(dto.submissionPeriodId);
+      periodContext = await this.submissionPeriodsService.resolveOpenPeriod(
+        dto.submissionPeriodId,
+      );
       this.assertPeriodMatchesStudentFaculty(student, periodContext.facultyId);
     }
 
@@ -696,15 +791,20 @@ export class SubmissionsService {
           documentType,
           language,
           description,
-          JSON.stringify(extraMetadata)
-        ]
+          JSON.stringify(extraMetadata),
+        ],
       );
 
       await this.replaceAuthors(client, submissionId, authorIds);
       await this.replaceReviewers(client, submissionId, reviewerIds);
 
       if (thesisFile) {
-        await this.replaceThesisFile(client, submissionId, thesisFile, targetDirectory);
+        await this.replaceThesisFile(
+          client,
+          submissionId,
+          thesisFile,
+          targetDirectory,
+        );
       }
 
       await client.query(
@@ -716,10 +816,10 @@ export class SubmissionsService {
           actor.sub,
           JSON.stringify({
             title: meta.title,
-            submissionPeriodId: periodContext?.periodId ?? null
+            submissionPeriodId: periodContext?.periodId ?? null,
           }),
-          actor.role
-        ]
+          actor.role,
+        ],
       );
 
       await client.query("COMMIT");
@@ -737,7 +837,7 @@ export class SubmissionsService {
     actor: JwtPayload,
     submissionId: string,
     dto: SaveDraftDto,
-    thesisFile?: UploadedFile
+    thesisFile?: UploadedFile,
   ) {
     if (actor.role !== "student" && !this.isAdminActor(actor)) {
       throw new ForbiddenException();
@@ -773,7 +873,7 @@ export class SubmissionsService {
                 student_email, title_vi, title_en, thesis_advisors, major, thesis_year,
                 date_issued, publisher, document_type, language, description, extra_metadata
          FROM submissions WHERE id = $1::uuid LIMIT 1 FOR UPDATE`,
-        [submissionId]
+        [submissionId],
       );
       const row = existing.rows[0];
       if (!row) {
@@ -787,7 +887,12 @@ export class SubmissionsService {
       if (dto.studentId && dto.studentId !== row.student_id) {
         throw new BadRequestException("Cannot change the submitting student");
       }
-      await this.assertStudentSubmissionAction(client, submissionId, row.student_id, "edit");
+      await this.assertStudentSubmissionAction(
+        client,
+        submissionId,
+        row.student_id,
+        "edit",
+      );
 
       const student = await this.usersService.findById(row.student_id);
       if (!student) {
@@ -808,32 +913,38 @@ export class SubmissionsService {
           publisher: row.publisher,
           documentType: row.document_type,
           language: row.language,
-          description: row.description
+          description: row.description,
         },
-        { required: false }
+        { required: false },
       );
 
-      const { authorIds, authorSnapshot, reviewerIds, reviewerSnapshot } = await this.resolveAuthorsAndReviewers(
-        row.student_id,
-        dto.authorIds,
-        dto.reviewerIds,
-        { reviewersRequired: false }
-      );
+      const { authorIds, authorSnapshot, reviewerIds, reviewerSnapshot } =
+        await this.resolveAuthorsAndReviewers(
+          row.student_id,
+          dto.authorIds,
+          dto.reviewerIds,
+          { reviewersRequired: false },
+        );
 
-      let periodContext: Awaited<ReturnType<SubmissionPeriodsService["resolveOpenPeriod"]>> | null = null;
+      let periodContext: Awaited<
+        ReturnType<SubmissionPeriodsService["resolveOpenPeriod"]>
+      > | null = null;
       const periodId = dto.submissionPeriodId ?? row.submission_period_id;
       if (periodId) {
         if (row.status === "draft") {
-          periodContext = await this.submissionPeriodsService.resolveOpenPeriod(periodId);
+          periodContext =
+            await this.submissionPeriodsService.resolveOpenPeriod(periodId);
         } else {
           const periodCheck = await client.query(
             `SELECT 1 FROM submission_periods WHERE id = $1::uuid LIMIT 1`,
-            [periodId]
+            [periodId],
           );
           if (!periodCheck.rows[0]) {
             throw new BadRequestException("Submission period not found");
           }
-          const periodMeta = await this.submissionPeriodsService.resolveOpenPeriod(periodId).catch(() => null);
+          const periodMeta = await this.submissionPeriodsService
+            .resolveOpenPeriod(periodId)
+            .catch(() => null);
           if (periodMeta) {
             periodContext = periodMeta;
           } else {
@@ -849,7 +960,7 @@ export class SubmissionsService {
                JOIN faculties f ON f.id = s.faculty_id
                WHERE sp.id = $1::uuid
                LIMIT 1`,
-              [periodId]
+              [periodId],
             );
             const m = meta.rows[0];
             periodContext = m
@@ -864,26 +975,41 @@ export class SubmissionsService {
                   semesterName: m.semester_name,
                   universityId: "",
                   universityName: m.university_name,
-                  allowResubmit: true
+                  allowResubmit: true,
                 }
               : null;
           }
         }
       }
       if (periodContext?.facultyId) {
-        this.assertPeriodMatchesStudentFaculty(student, periodContext.facultyId);
+        this.assertPeriodMatchesStudentFaculty(
+          student,
+          periodContext.facultyId,
+        );
       }
 
       const formValues = await this.resolveConfigurableFields(
-        { ...(dto.metadata || {}), ...dto, abstract: dto.abstract ?? row.abstract },
-        { required: false, existingExtra: this.parseExtraMetadata(row.extra_metadata) }
+        {
+          ...(dto.metadata || {}),
+          ...dto,
+          abstract: dto.abstract ?? row.abstract,
+        },
+        {
+          required: false,
+          existingExtra: this.parseExtraMetadata(row.extra_metadata),
+        },
       );
       const dateIssued = formValues.columns.date_issued ?? meta.dateIssued;
       const publisher = formValues.columns.publisher ?? meta.publisher;
-      const documentType = formValues.columns.document_type ?? meta.documentType;
+      const documentType =
+        formValues.columns.document_type ?? meta.documentType;
       const language = formValues.columns.language ?? meta.language;
       const description = formValues.columns.description ?? meta.description;
-      const abstract = formValues.columns.abstract ?? dto.abstract?.trim() ?? row.abstract ?? "";
+      const abstract =
+        formValues.columns.abstract ??
+        dto.abstract?.trim() ??
+        row.abstract ??
+        "";
       const extraMetadata = formValues.extra;
 
       await client.query(
@@ -930,8 +1056,8 @@ export class SubmissionsService {
           language,
           description,
           JSON.stringify(extraMetadata),
-          submissionId
-        ]
+          submissionId,
+        ],
       );
 
       await this.replaceAuthors(client, submissionId, authorIds);
@@ -940,13 +1066,24 @@ export class SubmissionsService {
       if (thesisFile) {
         const targetDirectory = path.join(uploadsRoot, submissionId);
         await mkdir(targetDirectory, { recursive: true });
-        await this.replaceThesisFile(client, submissionId, thesisFile, targetDirectory);
+        await this.replaceThesisFile(
+          client,
+          submissionId,
+          thesisFile,
+          targetDirectory,
+        );
       }
 
       await client.query(
         `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
          VALUES ($1, $2, $3, $5, 'draft_updated', $4::jsonb)`,
-        [randomUUID(), submissionId, actor.sub, JSON.stringify({ title: meta.title }), actor.role]
+        [
+          randomUUID(),
+          submissionId,
+          actor.sub,
+          JSON.stringify({ title: meta.title }),
+          actor.role,
+        ],
       );
 
       await client.query("COMMIT");
@@ -964,7 +1101,7 @@ export class SubmissionsService {
     actor: JwtPayload,
     submissionId: string,
     dto: SaveDraftDto,
-    thesisFile?: UploadedFile
+    thesisFile?: UploadedFile,
   ) {
     if (actor.role !== "student" && !this.isAdminActor(actor)) {
       throw new ForbiddenException();
@@ -974,7 +1111,10 @@ export class SubmissionsService {
     }
 
     let resubmit = false;
-    let placed: { status: string; role: string } = { status: "reviewing", role: "reviewer" };
+    let placed: { status: string; role: string } = {
+      status: "reviewing",
+      role: "reviewer",
+    };
     const client = await this.db.connect();
     try {
       await client.query("BEGIN");
@@ -1001,7 +1141,7 @@ export class SubmissionsService {
                 student_email, title_vi, title_en, thesis_advisors, major, thesis_year,
                 date_issued, publisher, document_type, language, description, extra_metadata
          FROM submissions WHERE id = $1::uuid LIMIT 1 FOR UPDATE`,
-        [submissionId]
+        [submissionId],
       );
       const row = existing.rows[0];
       if (!row) {
@@ -1016,13 +1156,18 @@ export class SubmissionsService {
         row.status === "reject" ||
         row.status === "approved" ||
         row.status === "reviewing";
-      await this.assertStudentSubmissionAction(client, submissionId, row.student_id, "submit");
+      await this.assertStudentSubmissionAction(
+        client,
+        submissionId,
+        row.student_id,
+        "submit",
+      );
 
       if (row.status === "draft") {
         await this.assertStudentMaySubmit(client, row.student_id);
       } else {
         await this.assertStudentMaySubmit(client, row.student_id, {
-          excludeSubmissionId: submissionId
+          excludeSubmissionId: submissionId,
         });
       }
 
@@ -1045,9 +1190,9 @@ export class SubmissionsService {
           publisher: row.publisher,
           documentType: row.document_type,
           language: row.language,
-          description: row.description
+          description: row.description,
         },
-        { required: false }
+        { required: false },
       );
       await this.assertConfiguredMetadata(meta);
       const formValues = await this.resolveConfigurableFields(
@@ -1059,22 +1204,37 @@ export class SubmissionsService {
           publisher: dto.publisher ?? row.publisher,
           documentType: dto.documentType ?? row.document_type,
           language: dto.language ?? row.language,
-          description: dto.description ?? row.description
+          description: dto.description ?? row.description,
         },
-        { required: true, existingExtra: this.parseExtraMetadata(row.extra_metadata) }
+        {
+          required: true,
+          existingExtra: this.parseExtraMetadata(row.extra_metadata),
+        },
       );
       const dateIssued = formValues.columns.date_issued ?? meta.dateIssued;
       const publisher = formValues.columns.publisher ?? meta.publisher;
-      const documentType = formValues.columns.document_type ?? meta.documentType;
+      const documentType =
+        formValues.columns.document_type ?? meta.documentType;
       const language = formValues.columns.language ?? meta.language;
       const description = formValues.columns.description ?? meta.description;
-      const abstract = formValues.columns.abstract ?? (dto.abstract?.trim() || row.abstract);
+      const abstract =
+        formValues.columns.abstract ?? (dto.abstract?.trim() || row.abstract);
       const extraMetadata = formValues.extra;
 
       const periodEnabled = await this.fieldActive("submissionPeriodId", true);
-      const periodNative = await this.usesNative("submissionPeriodId", "select");
-      const periodId = periodEnabled && periodNative ? dto.submissionPeriodId ?? row.submission_period_id : null;
-      if (periodNative && (await this.fieldMust("submissionPeriodId", true)) && !periodId) {
+      const periodNative = await this.usesNative(
+        "submissionPeriodId",
+        "select",
+      );
+      const periodId =
+        periodEnabled && periodNative
+          ? (dto.submissionPeriodId ?? row.submission_period_id)
+          : null;
+      if (
+        periodNative &&
+        (await this.fieldMust("submissionPeriodId", true)) &&
+        !periodId
+      ) {
         throw new BadRequestException("Submission period is required");
       }
       if (!periodNative && periodEnabled) {
@@ -1104,12 +1264,13 @@ export class SubmissionsService {
         facultyId: student.facultyId || "",
         facultyName: "",
         semesterName: "",
-        universityName: ""
+        universityName: "",
       };
       if (!periodId) {
         // Period field is off or empty and not required.
       } else if (row.status === "draft") {
-        periodContext = await this.submissionPeriodsService.resolveOpenPeriod(periodId);
+        periodContext =
+          await this.submissionPeriodsService.resolveOpenPeriod(periodId);
       } else if (
         row.status === "rejected" ||
         row.status === "reject" ||
@@ -1128,7 +1289,7 @@ export class SubmissionsService {
            JOIN faculties f ON f.id = s.faculty_id
            WHERE sp.id = $1::uuid
            LIMIT 1`,
-          [periodId]
+          [periodId],
         );
         const m = meta.rows[0];
         if (!m) {
@@ -1145,20 +1306,30 @@ export class SubmissionsService {
           semesterName: m.semester_name,
           universityId: "",
           universityName: m.university_name,
-          allowResubmit: true
+          allowResubmit: true,
         };
       } else {
-        throw new BadRequestException("This thesis cannot be submitted in its current state");
+        throw new BadRequestException(
+          "This thesis cannot be submitted in its current state",
+        );
       }
       if (periodId) {
-        this.assertPeriodMatchesStudentFaculty(student, periodContext.facultyId);
+        this.assertPeriodMatchesStudentFaculty(
+          student,
+          periodContext.facultyId,
+        );
       }
 
       const authorsEnabled = await this.fieldActive("authorIds", true);
       const authorsNative = await this.usesNative("authorIds", "select");
       const reviewersEnabled = await this.fieldActive("reviewerIds", true);
       const reviewersNative = await this.usesNative("reviewerIds", "select");
-      if (authorsEnabled && authorsNative && (await this.fieldMust("authorIds", true)) && !(dto.authorIds && dto.authorIds.length > 0)) {
+      if (
+        authorsEnabled &&
+        authorsNative &&
+        (await this.fieldMust("authorIds", true)) &&
+        !(dto.authorIds && dto.authorIds.length > 0)
+      ) {
         throw new BadRequestException("At least one author is required");
       }
       if (authorsEnabled && !authorsNative) {
@@ -1183,7 +1354,12 @@ export class SubmissionsService {
         row.student_id,
         authorsEnabled && authorsNative ? dto.authorIds : [row.student_id],
         reviewersEnabled && reviewersNative ? dto.reviewerIds : [],
-        { reviewersRequired: reviewersEnabled && reviewersNative && (await this.fieldMust("reviewerIds", true)) }
+        {
+          reviewersRequired:
+            reviewersEnabled &&
+            reviewersNative &&
+            (await this.fieldMust("reviewerIds", true)),
+        },
       );
       const authorIds = resolvedPeople.authorIds;
       const authorSnapshot = resolvedPeople.authorSnapshot;
@@ -1195,11 +1371,15 @@ export class SubmissionsService {
       }
       await this.groups.assertReviewersAllowed(row.student_id, reviewerIds);
 
-      await this.assertAuthorsAvailableForSubmission(client, authorIds, submissionId);
+      await this.assertAuthorsAvailableForSubmission(
+        client,
+        authorIds,
+        submissionId,
+      );
 
       const thesisExists = await client.query(
         `SELECT 1 FROM submission_files WHERE submission_id = $1::uuid AND file_type = 'thesis' LIMIT 1`,
-        [submissionId]
+        [submissionId],
       );
       if (
         (await this.usesNative("thesisFile", "file")) &&
@@ -1255,8 +1435,8 @@ export class SubmissionsService {
           language,
           description,
           JSON.stringify(extraMetadata),
-          submissionId
-        ]
+          submissionId,
+        ],
       );
 
       await this.replaceAuthors(client, submissionId, authorIds);
@@ -1267,7 +1447,12 @@ export class SubmissionsService {
       if (thesisFile) {
         const targetDirectory = path.join(uploadsRoot, submissionId);
         await mkdir(targetDirectory, { recursive: true });
-        await this.replaceThesisFile(client, submissionId, thesisFile, targetDirectory);
+        await this.replaceThesisFile(
+          client,
+          submissionId,
+          thesisFile,
+          targetDirectory,
+        );
       }
 
       await client.query(
@@ -1289,10 +1474,12 @@ export class SubmissionsService {
             reviewerIds,
             submissionPeriodId: periodContext.periodId,
             fromStatus: row.status,
-            submittedOnBehalf: this.isAdminActor(actor) ? row.student_id : undefined
+            submittedOnBehalf: this.isAdminActor(actor)
+              ? row.student_id
+              : undefined,
           }),
-          actor.role
-        ]
+          actor.role,
+        ],
       );
 
       placed = await this.workflow.snapshot(client, submissionId);
@@ -1306,11 +1493,11 @@ export class SubmissionsService {
 
     if (placed.role === "reviewer") {
       this.workflowMail.notifySafely("reviewer_assigned", () =>
-        this.workflowMail.notifyReviewersOnSubmit(submissionId)
+        this.workflowMail.notifyReviewersOnSubmit(submissionId),
       );
     }
     this.workflowMail.notifySafely("student_submitted", () =>
-      this.workflowMail.notifyStudentOnSubmitted(submissionId, resubmit)
+      this.workflowMail.notifyStudentOnSubmitted(submissionId, resubmit),
     );
 
     return { id: submissionId, status: placed.status };
@@ -1328,13 +1515,20 @@ export class SubmissionsService {
     const client = await this.db.connect();
     try {
       await client.query("BEGIN");
-      await this.assertStudentSubmissionAction(client, submissionId, actor.sub, "delete");
+      await this.assertStudentSubmissionAction(
+        client,
+        submissionId,
+        actor.sub,
+        "delete",
+      );
 
       const files = await client.query<{ file_url: string }>(
         `SELECT file_url FROM submission_files WHERE submission_id = $1::uuid`,
-        [submissionId]
+        [submissionId],
       );
-      await client.query(`DELETE FROM submissions WHERE id = $1::uuid`, [submissionId]);
+      await client.query(`DELETE FROM submissions WHERE id = $1::uuid`, [
+        submissionId,
+      ]);
       await client.query("COMMIT");
 
       for (const file of files.rows) {
@@ -1359,10 +1553,16 @@ export class SubmissionsService {
     return role === "admin" || role === "library_staff" || role === "director";
   }
 
-  private async deleteSubmissionAsStaff(actor: JwtPayload, submissionId: string) {
-    const existing = await this.db.query<{ dspace_item_id: string | null; status: string }>(
+  private async deleteSubmissionAsStaff(
+    actor: JwtPayload,
+    submissionId: string,
+  ) {
+    const existing = await this.db.query<{
+      dspace_item_id: string | null;
+      status: string;
+    }>(
       `SELECT dspace_item_id, status FROM submissions WHERE id = $1::uuid LIMIT 1`,
-      [submissionId]
+      [submissionId],
     );
     const row = existing.rows[0];
     if (!row) {
@@ -1381,7 +1581,7 @@ export class SubmissionsService {
         this.logger.warn(
           `DSpace item ${dspaceItemId} delete failed for submission ${submissionId}: ${
             error instanceof Error ? error.message : error
-          }`
+          }`,
         );
       }
     }
@@ -1391,9 +1591,11 @@ export class SubmissionsService {
       await client.query("BEGIN");
       const files = await client.query<{ file_url: string }>(
         `SELECT file_url FROM submission_files WHERE submission_id = $1::uuid`,
-        [submissionId]
+        [submissionId],
       );
-      await client.query(`DELETE FROM submissions WHERE id = $1::uuid`, [submissionId]);
+      await client.query(`DELETE FROM submissions WHERE id = $1::uuid`, [
+        submissionId,
+      ]);
       await client.query("COMMIT");
 
       for (const file of files.rows) {
@@ -1415,7 +1617,7 @@ export class SubmissionsService {
       ok: true,
       dspaceDeleted,
       dspaceDeleteWarning,
-      status: row.status
+      status: row.status,
     };
   }
 
@@ -1427,9 +1629,12 @@ export class SubmissionsService {
     const client = await this.db.connect();
     try {
       await client.query("BEGIN");
-      const existing = await client.query<{ student_id: string; status: string }>(
+      const existing = await client.query<{
+        student_id: string;
+        status: string;
+      }>(
         `SELECT student_id, status FROM submissions WHERE id = $1::uuid LIMIT 1 FOR UPDATE`,
-        [submissionId]
+        [submissionId],
       );
       const row = existing.rows[0];
       if (!row) {
@@ -1440,11 +1645,16 @@ export class SubmissionsService {
         client,
         submissionId,
         row.student_id,
-        "revert_draft"
+        "revert_draft",
       );
 
-      await client.query(`UPDATE submissions SET status = 'draft' WHERE id = $1::uuid`, [submissionId]);
-      await client.query(`DELETE FROM reviews WHERE submission_id = $1::uuid`, [submissionId]);
+      await client.query(
+        `UPDATE submissions SET status = 'draft' WHERE id = $1::uuid`,
+        [submissionId],
+      );
+      await client.query(`DELETE FROM reviews WHERE submission_id = $1::uuid`, [
+        submissionId,
+      ]);
       await client.query(
         `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
          VALUES ($1, $2, $3, $5, 'reverted_to_draft', $4::jsonb)`,
@@ -1453,8 +1663,8 @@ export class SubmissionsService {
           submissionId,
           actor.sub,
           JSON.stringify({ fromStatus: status }),
-          actor.role
-        ]
+          actor.role,
+        ],
       );
       await client.query(
         `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
@@ -1463,8 +1673,12 @@ export class SubmissionsService {
           randomUUID(),
           submissionId,
           actor.sub,
-          JSON.stringify({ from: status, to: "draft", reason: "student_reverted_to_draft" })
-        ]
+          JSON.stringify({
+            from: status,
+            to: "draft",
+            reason: "student_reverted_to_draft",
+          }),
+        ],
       );
       await client.query("COMMIT");
     } catch (error) {
@@ -1481,7 +1695,7 @@ export class SubmissionsService {
     studentId: string,
     authorIdsInput: string[] | undefined,
     reviewerIdsInput: string[] | undefined,
-    options: { reviewersRequired: boolean }
+    options: { reviewersRequired: boolean },
   ) {
     const uniqueAuthorIds = Array.from(new Set(authorIdsInput ?? [studentId]));
     if (uniqueAuthorIds.length === 0) {
@@ -1497,7 +1711,9 @@ export class SubmissionsService {
       authorUsers.push(authorUser);
     }
     if (!uniqueAuthorIds.includes(studentId)) {
-      throw new BadRequestException("Submitting student must be included in authors");
+      throw new BadRequestException(
+        "Submitting student must be included in authors",
+      );
     }
 
     const uniqueReviewerIds = Array.from(new Set(reviewerIdsInput ?? []));
@@ -1516,23 +1732,30 @@ export class SubmissionsService {
 
     return {
       authorIds: uniqueAuthorIds,
-      authorSnapshot: authorUsers.map((user) => user.displayName || user.username).join("; "),
+      authorSnapshot: authorUsers
+        .map((user) => user.displayName || user.username)
+        .join("; "),
       reviewerIds: uniqueReviewerIds,
-      reviewerSnapshot: reviewerUsers.map((user) => user.displayName || user.username).join("; ")
+      reviewerSnapshot: reviewerUsers
+        .map((user) => user.displayName || user.username)
+        .join("; "),
     };
   }
 
   private async replaceAuthors(
     client: { query: (text: string, params?: unknown[]) => Promise<unknown> },
     submissionId: string,
-    authorIds: string[]
+    authorIds: string[],
   ) {
-    await client.query(`DELETE FROM submission_authors WHERE submission_id = $1::uuid`, [submissionId]);
+    await client.query(
+      `DELETE FROM submission_authors WHERE submission_id = $1::uuid`,
+      [submissionId],
+    );
     let sortOrder = 0;
     for (const authorId of authorIds) {
       await client.query(
         `INSERT INTO submission_authors (submission_id, user_id, sort_order) VALUES ($1::uuid, $2, $3)`,
-        [submissionId, authorId, sortOrder]
+        [submissionId, authorId, sortOrder],
       );
       sortOrder += 1;
     }
@@ -1541,33 +1764,41 @@ export class SubmissionsService {
   private async replaceReviewers(
     client: { query: (text: string, params?: unknown[]) => Promise<unknown> },
     submissionId: string,
-    reviewerIds: string[]
+    reviewerIds: string[],
   ) {
-    await client.query(`DELETE FROM reviews WHERE submission_id = $1::uuid`, [submissionId]);
+    await client.query(`DELETE FROM reviews WHERE submission_id = $1::uuid`, [
+      submissionId,
+    ]);
     let sortOrder = 0;
     for (const reviewerId of reviewerIds) {
       await client.query(
         `INSERT INTO reviews (id, submission_id, reviewer_id, decision, comment, sort_order)
          VALUES ($1::uuid, $2::uuid, $3, 'pending', NULL, $4)`,
-        [randomUUID(), submissionId, reviewerId, sortOrder]
+        [randomUUID(), submissionId, reviewerId, sortOrder],
       );
       sortOrder += 1;
     }
   }
 
   private async replaceThesisFile(
-    client: { query: (text: string, params?: unknown[]) => Promise<{ rows: { file_url: string }[] }> },
+    client: {
+      query: (
+        text: string,
+        params?: unknown[],
+      ) => Promise<{ rows: { file_url: string }[] }>;
+    },
     submissionId: string,
     thesisFile: UploadedFile,
-    targetDirectory: string
+    targetDirectory: string,
   ) {
     const oldThesis = await client.query(
       `SELECT file_url FROM submission_files WHERE submission_id = $1::uuid AND file_type = 'thesis'`,
-      [submissionId]
+      [submissionId],
     );
-    await client.query(`DELETE FROM submission_files WHERE submission_id = $1::uuid AND file_type = 'thesis'`, [
-      submissionId
-    ]);
+    await client.query(
+      `DELETE FROM submission_files WHERE submission_id = $1::uuid AND file_type = 'thesis'`,
+      [submissionId],
+    );
     for (const file of oldThesis.rows) {
       await this.deleteFileSilently(file.file_url);
     }
@@ -1575,7 +1806,7 @@ export class SubmissionsService {
     await client.query(
       `INSERT INTO submission_files (id, submission_id, file_name, file_url, file_type)
        VALUES ($1, $2::uuid, $3, $4, 'thesis')`,
-      [randomUUID(), submissionId, thesisFile.originalname, thesisPath]
+      [randomUUID(), submissionId, thesisFile.originalname, thesisPath],
     );
   }
 
@@ -1682,7 +1913,7 @@ export class SubmissionsService {
             WHERE sa_vis.submission_id = s.id AND sa_vis.user_id = $2
           )
        ORDER BY s.created_at DESC`,
-      [studentId, studentId]
+      [studentId, studentId],
     );
 
     return result.rows;
@@ -1797,13 +2028,17 @@ export class SubmissionsService {
        LEFT JOIN submission_periods sp ON sp.id = s.submission_period_id
        LEFT JOIN semesters sem ON sem.id = sp.semester_id
        LEFT JOIN faculties f ON f.id = sem.faculty_id
-       ORDER BY s.created_at DESC`
+       ORDER BY s.created_at DESC`,
     );
 
     return result.rows;
   }
 
-  async getSubmissionFileStream(user: JwtPayload, submissionId: string, fileId: string) {
+  async getSubmissionFileStream(
+    user: JwtPayload,
+    submissionId: string,
+    fileId: string,
+  ) {
     const result = await this.db.query<{
       file_name: string;
       file_url: string;
@@ -1813,7 +2048,7 @@ export class SubmissionsService {
        FROM submission_files sf
        WHERE sf.id = $1::uuid AND sf.submission_id = $2::uuid
        LIMIT 1`,
-      [fileId, submissionId]
+      [fileId, submissionId],
     );
 
     if (result.rowCount === 0) {
@@ -1822,7 +2057,11 @@ export class SubmissionsService {
 
     const row = result.rows[0];
 
-    if (user.role === "library_staff" || user.role === "director" || user.role === "admin") {
+    if (
+      user.role === "library_staff" ||
+      user.role === "director" ||
+      user.role === "admin"
+    ) {
       // allowed
     } else if (user.role === "student") {
       const accessResult = await this.db.query(
@@ -1839,10 +2078,12 @@ export class SubmissionsService {
              )
            )
          LIMIT 1`,
-        [submissionId, user.sub]
+        [submissionId, user.sub],
       );
       if (accessResult.rowCount === 0) {
-        throw new ForbiddenException("You are not allowed to access this submission file");
+        throw new ForbiddenException(
+          "You are not allowed to access this submission file",
+        );
       }
     } else if (user.role === "reviewer") {
       const accessResult = await this.db.query(
@@ -1850,7 +2091,7 @@ export class SubmissionsService {
          FROM reviews r
          WHERE r.submission_id = $1::uuid AND r.reviewer_id = $2
          LIMIT 1`,
-        [submissionId, user.sub]
+        [submissionId, user.sub],
       );
       if (accessResult.rowCount === 0) {
         throw new ForbiddenException("You are not assigned to this submission");
@@ -1873,7 +2114,7 @@ export class SubmissionsService {
     return {
       stream,
       contentType,
-      fileName: row.file_name
+      fileName: row.file_name,
     };
   }
 
@@ -1882,20 +2123,28 @@ export class SubmissionsService {
     const map: Record<string, string> = {
       ".pdf": "application/pdf",
       ".doc": "application/msword",
-      ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ".docx":
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       ".zip": "application/zip",
       ".png": "image/png",
       ".jpg": "image/jpeg",
-      ".jpeg": "image/jpeg"
+      ".jpeg": "image/jpeg",
     };
     return map[ext] || "application/octet-stream";
   }
 
-  private assertResolvedFilePathUnderSubmission(fileUrl: string, submissionId: string): void {
+  private assertResolvedFilePathUnderSubmission(
+    fileUrl: string,
+    submissionId: string,
+  ): void {
     const submissionDir = path.resolve(path.join(uploadsRoot, submissionId));
     const resolvedFile = path.resolve(fileUrl);
     const relative = path.relative(submissionDir, resolvedFile);
-    if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) {
+    if (
+      relative === "" ||
+      relative.startsWith("..") ||
+      path.isAbsolute(relative)
+    ) {
       throw new ForbiddenException();
     }
   }
@@ -1945,15 +2194,124 @@ export class SubmissionsService {
       ["titleEn", meta.titleEn, "English thesis title is required"],
       ["thesisAdvisors", meta.thesisAdvisors, "Advisor(s) is required"],
       ["major", meta.major, "Major is required"],
-      ["thesisYear", meta.thesisYear, "Year is required"]
+      ["thesisYear", meta.thesisYear, "Year is required"],
     ];
     for (const [key, value, message] of checks) {
       if ((await this.fieldMust(key, true)) && !value) {
         throw new BadRequestException(message);
       }
     }
-    if (meta.thesisYear && (await this.fieldActive("thesisYear", true)) && !/^\d{4}$/.test(meta.thesisYear)) {
+    if (
+      meta.thesisYear &&
+      (await this.fieldActive("thesisYear", true)) &&
+      !/^\d{4}$/.test(meta.thesisYear)
+    ) {
       throw new BadRequestException("Year must be a four-digit number");
+    }
+  }
+
+  async getSubmissionHistory(submissionId: string) {
+    const query = `
+      SELECT 
+        se.id,
+        se.created_at AS "createdAt",
+        se.actor_role AS "role",
+        se.event_type AS "eventType",
+        COALESCE(u.display_name, se.actor_id) AS "actorName",
+        se.payload->>'comment' AS "comment",
+        CASE 
+          WHEN se.event_type ILIKE '%approved%' THEN 'approved'
+          WHEN se.event_type ILIKE '%rejected%' THEN 'rejected'
+          WHEN se.event_type = 'SUBMIT' THEN 'submitted'
+          WHEN se.event_type = 'RESUBMIT' THEN 'resubmitted'
+          WHEN se.event_type = 'metadata_updated' THEN 'metadata_updated'
+          ELSE se.event_type
+        END AS "action",
+        se.payload
+      FROM submission_events se
+      LEFT JOIN users u ON se.actor_id = u.username
+      WHERE se.submission_id = $1::uuid
+      ORDER BY se.created_at ASC
+    `;
+    const result = await this.db.query(query, [submissionId]);
+    return result.rows;
+  }
+
+  async updateMetadata(
+    user: JwtPayload,
+    submissionId: string,
+    dto: UpdateMetadataDto,
+  ) {
+    if (
+      user.role !== WorkflowRole.LIBRARY_STAFF &&
+      user.role !== WorkflowRole.ADMIN
+    ) {
+      throw new ForbiddenException(
+        "Only Library Staffs have permission to compile metadata",
+      );
+    }
+
+    const client = await this.db.connect();
+    try {
+      await client.query("BEGIN");
+
+      const res = await client.query<{ status: string; extra_metadata: any }>(
+        `SELECT status, extra_metadata FROM submissions WHERE id = $1::uuid LIMIT 1 FOR UPDATE`,
+        [submissionId],
+      );
+      const submission = res.rows[0];
+
+      if (!submission) {
+        throw new NotFoundException("Submission not found");
+      }
+
+      if (submission.status !== SubmissionStatus.REVIEWING) {
+        throw new BadRequestException("File not in reviewing state");
+      }
+
+      await client.query(
+        `UPDATE submissions 
+        SET title_vi = COALESCE($1, title_vi),
+            title_en = COALESCE($2, title_en),
+            description = COALESCE($3, description),
+            keywords = COALESCE($4, keywords),
+            thesis_advisors = COALESCE($5, thesis_advisors),
+            major = COALESCE($6, major),
+            thesis_year = COALESCE($7, thesis_year),
+            updated_at = NOW()
+        WHERE id = $8::uuid`,
+        [
+          dto.titleVi,
+          dto.titleEn,
+          dto.abstract,
+          dto.keywords,
+          dto.thesisAdvisors,
+          dto.major,
+          dto.thesisYear,
+          submissionId,
+        ],
+      );
+
+      await client.query(
+        `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
+        VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
+        [
+          randomUUID(),
+          submissionId,
+          user.sub,
+          WorkflowRole.LIBRARY_STAFF,
+          WorkflowEventType.METADATA_UPDATED,
+          JSON.stringify({ updatedFields: dto }),
+        ],
+      );
+
+      await client.query("COMMIT");
+      return { ok: true, message: "Cập nhật metadata thành công" };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
     }
   }
 }

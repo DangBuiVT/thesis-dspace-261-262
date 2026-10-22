@@ -12,7 +12,7 @@ import {
   StreamableFile,
   UploadedFile,
   UseGuards,
-  UseInterceptors
+  UseInterceptors,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { diskStorage } from "multer";
@@ -24,9 +24,14 @@ import { RequirePermissions } from "../auth/permissions.decorator";
 import type { JwtPayload } from "../auth/jwt.strategy";
 import { CreateSubmissionDto } from "./dto/create-submission.dto";
 import { SaveDraftDto } from "./dto/save-draft.dto";
-import { THESIS_UPLOAD_CEILING_BYTES, isThesisPdfUpload } from "./submission-limits";
+import {
+  THESIS_UPLOAD_CEILING_BYTES,
+  isThesisPdfUpload,
+} from "./submission-limits";
 import { SubmissionFormFieldsService } from "./submission-form-fields.service";
 import { SubmissionsService } from "./submissions.service";
+import { ParseUUIDPipe } from "@nestjs/common";
+import { UpdateMetadataDto } from "./dto/update-metadata.dto";
 
 const thesisUploadInterceptor = FileInterceptor("thesisFile", {
   storage: diskStorage({
@@ -35,28 +40,39 @@ const thesisUploadInterceptor = FileInterceptor("thesisFile", {
       mkdirSync(target, { recursive: true });
       cb(null, target);
     },
-    filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname.replace(/\s+/g, "-")}`)
+    filename: (_req, file, cb) =>
+      cb(null, `${Date.now()}-${file.originalname.replace(/\s+/g, "-")}`),
   }),
   limits: {
-    fileSize: THESIS_UPLOAD_CEILING_BYTES
+    fileSize: THESIS_UPLOAD_CEILING_BYTES,
   },
   fileFilter: (_req, file, cb) => {
     if (!isThesisPdfUpload(file)) {
-      cb(new BadRequestException("Thesis file must be a PDF") as unknown as Error, false);
+      cb(
+        new BadRequestException(
+          "Thesis file must be a PDF",
+        ) as unknown as Error,
+        false,
+      );
       return;
     }
     cb(null, true);
-  }
+  },
 });
 
-type UploadedThesisFile = { originalname: string; mimetype: string; path: string; filename: string };
+type UploadedThesisFile = {
+  originalname: string;
+  mimetype: string;
+  path: string;
+  filename: string;
+};
 
 @Controller("submissions")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class SubmissionsController {
   constructor(
     private readonly submissionsService: SubmissionsService,
-    private readonly formFieldsService: SubmissionFormFieldsService
+    private readonly formFieldsService: SubmissionFormFieldsService,
   ) {}
 
   private assertActorMayUseStudentId(actor: JwtPayload, studentId: string) {
@@ -69,7 +85,13 @@ export class SubmissionsController {
   }
 
   @Get("form-fields")
-  @RequirePermissions("submit_thesis", "library_intake", "director_approval", "view_all_submissions", "configure_system")
+  @RequirePermissions(
+    "submit_thesis",
+    "library_intake",
+    "director_approval",
+    "view_all_submissions",
+    "configure_system",
+  )
   listFormFields() {
     return this.formFieldsService.listEnabled();
   }
@@ -86,7 +108,7 @@ export class SubmissionsController {
   async create(
     @Req() req: { user: JwtPayload },
     @Body() body: CreateSubmissionDto,
-    @UploadedFile() thesisFile?: UploadedThesisFile
+    @UploadedFile() thesisFile?: UploadedThesisFile,
   ) {
     this.assertActorMayUseStudentId(req.user, body.studentId);
     return this.submissionsService.createSubmission(req.user, body, thesisFile);
@@ -98,7 +120,7 @@ export class SubmissionsController {
   async saveDraft(
     @Req() req: { user: JwtPayload },
     @Body() body: SaveDraftDto,
-    @UploadedFile() thesisFile?: UploadedThesisFile
+    @UploadedFile() thesisFile?: UploadedThesisFile,
   ) {
     this.assertActorMayUseStudentId(req.user, body.studentId);
     return this.submissionsService.saveDraft(req.user, body, thesisFile);
@@ -111,10 +133,15 @@ export class SubmissionsController {
     @Req() req: { user: JwtPayload },
     @Param("submissionId") submissionId: string,
     @Body() body: SaveDraftDto,
-    @UploadedFile() thesisFile?: UploadedThesisFile
+    @UploadedFile() thesisFile?: UploadedThesisFile,
   ) {
     this.assertActorMayUseStudentId(req.user, body.studentId);
-    return this.submissionsService.updateDraft(req.user, submissionId, body, thesisFile);
+    return this.submissionsService.updateDraft(
+      req.user,
+      submissionId,
+      body,
+      thesisFile,
+    );
   }
 
   @Post(":submissionId/submit")
@@ -124,21 +151,40 @@ export class SubmissionsController {
     @Req() req: { user: JwtPayload },
     @Param("submissionId") submissionId: string,
     @Body() body: SaveDraftDto,
-    @UploadedFile() thesisFile?: UploadedThesisFile
+    @UploadedFile() thesisFile?: UploadedThesisFile,
   ) {
     this.assertActorMayUseStudentId(req.user, body.studentId);
-    return this.submissionsService.submitSubmission(req.user, submissionId, body, thesisFile);
+    return this.submissionsService.submitSubmission(
+      req.user,
+      submissionId,
+      body,
+      thesisFile,
+    );
   }
 
   @Post(":submissionId/revert-to-draft")
   @RequirePermissions("submit_thesis", "configure_system")
-  async revertToDraft(@Req() req: { user: JwtPayload }, @Param("submissionId") submissionId: string) {
-    return this.submissionsService.revertSubmissionToDraft(req.user, submissionId);
+  async revertToDraft(
+    @Req() req: { user: JwtPayload },
+    @Param("submissionId") submissionId: string,
+  ) {
+    return this.submissionsService.revertSubmissionToDraft(
+      req.user,
+      submissionId,
+    );
   }
 
   @Delete(":submissionId")
-  @RequirePermissions("submit_thesis", "library_intake", "director_approval", "configure_system")
-  async deleteSubmission(@Req() req: { user: JwtPayload }, @Param("submissionId") submissionId: string) {
+  @RequirePermissions(
+    "submit_thesis",
+    "library_intake",
+    "director_approval",
+    "configure_system",
+  )
+  async deleteSubmission(
+    @Req() req: { user: JwtPayload },
+    @Param("submissionId") submissionId: string,
+  ) {
     return this.submissionsService.deleteSubmission(req.user, submissionId);
   }
 
@@ -149,8 +195,15 @@ export class SubmissionsController {
   }
 
   @Get("student/:studentId")
-  @RequirePermissions("submit_thesis", "view_all_submissions", "configure_system")
-  getByStudent(@Req() req: { user: JwtPayload }, @Param("studentId") studentId: string) {
+  @RequirePermissions(
+    "submit_thesis",
+    "view_all_submissions",
+    "configure_system",
+  )
+  getByStudent(
+    @Req() req: { user: JwtPayload },
+    @Param("studentId") studentId: string,
+  ) {
     if (req.user.role === "student" && req.user.sub !== studentId) {
       throw new ForbiddenException();
     }
@@ -164,22 +217,50 @@ export class SubmissionsController {
     "library_intake",
     "director_approval",
     "view_all_submissions",
-    "configure_system"
+    "configure_system",
   )
   async downloadFile(
     @Req() req: { user: JwtPayload },
     @Param("submissionId") submissionId: string,
-    @Param("fileId") fileId: string
+    @Param("fileId") fileId: string,
   ) {
-    const { stream, contentType, fileName } = await this.submissionsService.getSubmissionFileStream(
-      req.user,
-      submissionId,
-      fileId
-    );
+    const { stream, contentType, fileName } =
+      await this.submissionsService.getSubmissionFileStream(
+        req.user,
+        submissionId,
+        fileId,
+      );
     const encoded = encodeURIComponent(fileName);
     return new StreamableFile(stream, {
       type: contentType,
-      disposition: `inline; filename*=UTF-8''${encoded}`
+      disposition: `inline; filename*=UTF-8''${encoded}`,
     });
+  }
+
+  @Get(":submissionId/history")
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions(
+    "submit_thesis",
+    "review_academic",
+    "library_intake",
+    "director_approval",
+    "view_all_submissions",
+    "configure_system",
+  )
+  async getSubmissionHistory(
+    @Param("submissionId", ParseUUIDPipe) submissionId: string,
+  ) {
+    return this.submissionsService.getSubmissionHistory(submissionId);
+  }
+
+  @Patch(":id/metadata")
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions("library_intake", "view_all_submissions")
+  async updateMetadata(
+    @Req() req: { user: JwtPayload },
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() body: UpdateMetadataDto,
+  ) {
+    return this.submissionsService.updateMetadata(req.user, id, body);
   }
 }
