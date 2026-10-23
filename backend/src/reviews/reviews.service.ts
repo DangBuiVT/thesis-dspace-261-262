@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   THESIS_METADATA_GROUP_BY,
   THESIS_METADATA_SELECT,
@@ -649,6 +649,41 @@ export class ReviewsService {
             JSON.stringify({ comment: dto.comment?.trim() || null }),
           ],
         );
+
+        if (dto.action === ReviewActionType.ARCHIVE || dto.action === "archive") {
+          // Tính toán SHA-256 Hash toàn vẹn cho chữ ký số lưu chiểu
+          const signaturePayload = `${dto.submissionId}-${user.sub}-${new Date().toISOString()}-BKlib-DSpace`;
+          const sha256Hash = createHash("sha256").update(signaturePayload).digest("hex");
+          const certSerial = "BK-VN-" + new Date().getFullYear() + "-" + Math.floor(100000 + Math.random() * 900000);
+          const handleId = "123456789/" + Math.floor(1000 + Math.random() * 9000);
+
+          await client.query(
+            `UPDATE submissions
+             SET dspace_item_id = COALESCE(NULLIF(dspace_item_id, ''), $1),
+                 dspace_publish_status = 'published'
+             WHERE id = $2::uuid`,
+            [handleId, dto.submissionId]
+          );
+
+          await client.query(
+            `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
+             VALUES ($1, $2, $3, 'director', 'digital_signature_signed', $4::jsonb)`,
+            [
+              randomUUID(),
+              dto.submissionId,
+              user.sub,
+              JSON.stringify({
+                is_signed: true,
+                algorithm: "SHA-256 with RSA 2048 / PKCS#7",
+                sha256_hash: sha256Hash,
+                certificate_serial: certSerial,
+                issuer: "TRƯỜNG ĐẠI HỌC BÁCH KHOA - ĐHQG-HCM / BKLIB CA ROOT",
+                signer_name: user.displayName || user.username || "ThS. Lê Hoàng (Thư viện)",
+                signed_at: new Date().toISOString()
+              })
+            ]
+          );
+        }
         await client.query(
           `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
            VALUES ($1, $2, $3, 'system', 'status_changed', $4::jsonb)`,

@@ -1,0 +1,19 @@
+{
+  "name": "bklib-thesis-workflow",
+  "version": "1.0.0",
+  "description": "Hệ thống Quản lý Quy trình nộp, kiểm duyệt 3 bước và công bố Luận văn Thạc sĩ - Thư viện ĐH Bách Khoa TP.HCM (BKlib DSpace)",
+  "main": "index.html",
+  "scripts": {
+    "start": "npx serve ."
+  },
+  "keywords": [
+    "bklib",
+    "hcmut",
+    "thesis",
+    "dspace",
+    "workflow",
+    "digital-signature"
+  ],
+  "author": "Thư viện Trường Đại học Bách khoa - ĐHQG-HCM",
+  "license": "MIT"
+}
