@@ -24,6 +24,16 @@ const STRUCTURAL_FIELDS: Array<{
 
 export async function ensurePortalSchema(db: Pool) {
   await db.query(`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS current_step INT`);
+  await db.query(`DROP INDEX IF EXISTS idx_submissions_one_active_per_student`);
+  try {
+    await db.query(
+      `INSERT INTO users (username, password, display_name, auth_source, role, status, faculty_id)
+       VALUES ('student2', 'student123', 'Student Beta', 'local', 'student', 'active', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0005')
+       ON CONFLICT (username) DO NOTHING`
+    );
+  } catch {
+    // users table may not exist yet on first boot
+  }
 
   try {
     await db.query(`

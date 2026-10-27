@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Button,
@@ -277,7 +277,11 @@ function isSubmissionCoAuthor(record, userId) {
   return authorIds.includes(String(userId));
 }
 
-function studentBlocksNewDraftOrSubmit(submissions, userId, excludeSubmissionId) {
+function studentBlocksNewDraftOrSubmit(_submissions, _userId, _excludeSubmissionId) {
+  // Cho ph�p sinh vi�n n?p nhi?u b�i lu?n van
+  return null;
+}
+function _studentBlocksNewDraftOrSubmit_DISABLED(submissions, userId, excludeSubmissionId) {
   if (!userId) {
     return null;
   }
@@ -653,6 +657,9 @@ function App() {
   const { t, lang } = useI18n();
   const tr = (value) => translateApiMessage(value, t);
   const [loginForm] = Form.useForm();
+  const [showRegister, setShowRegister] = React.useState(false);
+  const [registerLoading, setRegisterLoading] = React.useState(false);
+  const [registerForm] = Form.useForm();
   const [passwordForm] = Form.useForm();
   const [submissionForm] = Form.useForm();
   const [auth, setAuth] = useState(null);
@@ -1856,6 +1863,39 @@ function App() {
     } finally {
       clearTimeout(timeoutId);
       setIsLoggingIn(false);
+    }
+  };
+
+  const handleRegister = async (values) => {
+    setRegisterLoading(true);
+    try {
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: values.username.trim().toLowerCase(),
+          password: values.password,
+          displayName: values.displayName.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        message.error(data?.message || "Lỗi tạo tài khoản");
+        return;
+      }
+      message.success("Tạo tài khoản thành công! Đang đăng nhập...");
+      setShowRegister(false);
+      registerForm.resetFields();
+      // Auto-login after register - same pattern as handleLogin
+      if (data.access_token && data.user) {
+        const nextAuth = { token: data.access_token, user: data.user };
+        setAuth(nextAuth);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(nextAuth));
+      }
+    } catch (e) {
+      message.error("Lỗi kết nối. Vui lòng thử lại.");
+    } finally {
+      setRegisterLoading(false);
     }
   };
 

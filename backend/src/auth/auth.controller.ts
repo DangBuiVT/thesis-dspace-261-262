@@ -3,6 +3,7 @@ import type { Response } from "express";
 import { AuthService } from "./auth.service";
 import { ChangePasswordDto } from "./dto/change-password.dto";
 import { LoginDto } from "./dto/login.dto";
+import { RegisterDto } from "./dto/register.dto";
 import { JwtAuthGuard } from "./jwt-auth.guard";
 import type { JwtPayload } from "./jwt.strategy";
 
@@ -18,6 +19,17 @@ export class AuthController {
   @Post("login")
   async login(@Body() body: LoginDto) {
     return this.authService.login(body);
+  }
+
+  @Get("register-options")
+  registerOptions() {
+    return this.authService.getRegisterOptions();
+  }
+
+  @Post("register")
+  @HttpCode(201)
+  async register(@Body() body: RegisterDto) {
+    return this.authService.register(body);
   }
 
   @Get("me")
@@ -50,3 +62,4 @@ export class AuthController {
     return res.redirect(location);
   }
 }
+

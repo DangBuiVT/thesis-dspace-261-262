@@ -40,7 +40,7 @@ export class ReviewsService {
     private readonly workflowMail: WorkflowMailService,
     private readonly workflow: WorkflowService,
     private readonly groups: GroupsService,
-  ) {}
+  ) { }
 
   private libraryIntakeReadyClause() {
     return `s.status = 'reviewing'
@@ -650,7 +650,7 @@ export class ReviewsService {
           ],
         );
 
-        if (dto.action === ReviewActionType.ARCHIVE || dto.action === "archive") {
+        if (dto.action === ReviewActionType.ARCHIVE) {
           // Tính toán SHA-256 Hash toàn vẹn cho chữ ký số lưu chiểu
           const signaturePayload = `${dto.submissionId}-${user.sub}-${new Date().toISOString()}-BKlib-DSpace`;
           const sha256Hash = createHash("sha256").update(signaturePayload).digest("hex");

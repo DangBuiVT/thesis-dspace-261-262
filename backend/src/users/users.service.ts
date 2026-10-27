@@ -100,6 +100,36 @@ export class UsersService {
     return this.findByUsername(username);
   }
 
+  async listActiveFaculties() {
+    const result = await this.db.query<{ id: string; name: string }>(
+      `SELECT id, name FROM faculties WHERE status = 'active' ORDER BY name ASC`
+    );
+    return result.rows;
+  }
+
+  async findActiveFaculty(facultyId: string): Promise<{ id: string; name: string } | undefined> {
+    const result = await this.db.query<{ id: string; name: string }>(
+      `SELECT id, name FROM faculties WHERE id = $1::uuid AND status = 'active' LIMIT 1`,
+      [facultyId]
+    );
+    return result.rows[0];
+  }
+
+  async createUser(input: {
+    username: string;
+    password: string;
+    displayName: string;
+    role: UserRole;
+    facultyId?: string | null;
+  }): Promise<UserRecord> {
+    await this.db.query(
+      `INSERT INTO users (username, password, display_name, role, status, auth_source, faculty_id)
+       VALUES ($1, $2, $3, $4, 'active', 'local', $5)`,
+      [input.username.trim().toLowerCase(), input.password, input.displayName.trim(), input.role, input.facultyId ?? null]
+    );
+    return (await this.findByUsername(input.username))!;
+  }
+
   async listByRole(role: UserRole) {
     const result = await this.db.query<Pick<UserRow, "username" | "display_name" | "role" | "faculty_id" | "faculty_name">>(
       `SELECT u.username, u.display_name, u.role, u.faculty_id, f.name AS faculty_name

@@ -153,85 +153,6 @@ export class SubmissionsService {
     }
   }
 
-  private async assertStudentMaySubmit(
-    client: PoolClient,
-    studentId: string,
-    options: { excludeSubmissionId?: string } = {},
-  ) {
-    const { excludeSubmissionId } = options;
-    const result = await client.query<{
-      id: string;
-      status: string;
-      student_id: string;
-    }>(
-      `SELECT s.id::text AS id, s.status, s.student_id::text AS student_id
-       FROM submissions s
-       WHERE s.status <> 'draft'
-         AND (
-           s.student_id = $1
-           OR EXISTS (
-             SELECT 1
-             FROM submission_authors sa
-             WHERE sa.submission_id = s.id
-               AND sa.user_id = $1
-           )
-         )
-       ORDER BY s.created_at DESC`,
-      [studentId],
-    );
-
-    for (const row of result.rows) {
-      const isOwnSubmit = String(row.student_id) === String(studentId);
-
-      if (excludeSubmissionId && row.id === excludeSubmissionId) {
-        if (!isOwnSubmit) {
-          throw new BadRequestException(
-            "Only the submitting student can resubmit this thesis",
-          );
-        }
-        continue;
-      }
-
-      if (isOwnSubmit) {
-        throw new BadRequestException(
-          "You already have a submitted thesis. Only one thesis can be submitted per student",
-        );
-      }
-
-      throw new BadRequestException(
-        "You are already listed as an author on a submitted thesis, so you cannot submit another thesis",
-      );
-    }
-  }
-
-  /** Co-authors on a submitted thesis cannot create or keep a personal draft. */
-  private async assertStudentMayHaveDraft(
-    client: PoolClient,
-    studentId: string,
-  ) {
-    const result = await client.query<{ id: string }>(
-      `SELECT s.id::text AS id
-       FROM submissions s
-       WHERE s.status <> 'draft'
-         AND (
-           s.student_id = $1
-           OR EXISTS (
-             SELECT 1
-             FROM submission_authors sa
-             WHERE sa.submission_id = s.id
-               AND sa.user_id = $1
-           )
-         )
-       LIMIT 1`,
-      [studentId],
-    );
-    if (result.rows[0]) {
-      throw new BadRequestException(
-        "You are already listed as an author on a submitted thesis, so you cannot create or edit a draft",
-      );
-    }
-  }
-
   /** When a thesis is submitted, remove personal drafts of all listed authors (except the submission itself). */
   private async deleteDraftsForAuthors(
     client: PoolClient,
@@ -264,38 +185,6 @@ export class SubmissionsService {
         await unlink(path.join(uploadsRoot, draft.id));
       } catch {
         // directory may already be gone
-      }
-    }
-  }
-
-  /** Co-authors on a different non-draft thesis cannot be attached to another submission. */
-  private async assertAuthorsAvailableForSubmission(
-    client: PoolClient,
-    authorIds: string[],
-    excludeSubmissionId?: string,
-  ) {
-    for (const authorId of authorIds) {
-      const result = await client.query<{ id: string }>(
-        `SELECT s.id::text AS id
-         FROM submissions s
-         WHERE s.status <> 'draft'
-           AND (
-             s.student_id = $1
-             OR EXISTS (
-               SELECT 1
-               FROM submission_authors sa
-               WHERE sa.submission_id = s.id
-                 AND sa.user_id = $1
-             )
-           )
-           AND ($2::uuid IS NULL OR s.id <> $2::uuid)
-         LIMIT 1`,
-        [authorId, excludeSubmissionId ?? null],
-      );
-      if (result.rows[0]) {
-        throw new BadRequestException(
-          "One or more selected authors are already on another submitted thesis and cannot be included",
-        );
       }
     }
   }
@@ -547,8 +436,6 @@ export class SubmissionsService {
       const client = await this.db.connect();
       try {
         await client.query("BEGIN");
-        await this.assertStudentMaySubmit(client, dto.studentId);
-        await this.assertAuthorsAvailableForSubmission(client, uniqueAuthorIds);
         await client.query(
           `INSERT INTO submissions (
              id, title, author, reviewer, abstract, keywords, student_id, status,
@@ -692,13 +579,6 @@ export class SubmissionsService {
     thesisFile?: UploadedFile,
   ) {
     this.assertCanSubmitForStudent(actor, dto.studentId);
-
-    const lockClient = await this.db.connect();
-    try {
-      await this.assertStudentMayHaveDraft(lockClient, dto.studentId);
-    } finally {
-      lockClient.release();
-    }
 
     const existingDraft = await this.db.query<{ id: string }>(
       `SELECT id FROM submissions
@@ -878,9 +758,6 @@ export class SubmissionsService {
       const row = existing.rows[0];
       if (!row) {
         throw new NotFoundException("Submission not found");
-      }
-      if (row.status === "draft") {
-        await this.assertStudentMayHaveDraft(client, row.student_id);
       }
       currentStatus = row.status;
       this.assertCanSubmitForStudent(actor, row.student_id);
@@ -1163,14 +1040,6 @@ export class SubmissionsService {
         "submit",
       );
 
-      if (row.status === "draft") {
-        await this.assertStudentMaySubmit(client, row.student_id);
-      } else {
-        await this.assertStudentMaySubmit(client, row.student_id, {
-          excludeSubmissionId: submissionId,
-        });
-      }
-
       const student = await this.usersService.findById(row.student_id);
       if (!student) {
         throw new BadRequestException("Invalid student account");
@@ -1370,12 +1239,6 @@ export class SubmissionsService {
         reviewerSnapshot = "";
       }
       await this.groups.assertReviewersAllowed(row.student_id, reviewerIds);
-
-      await this.assertAuthorsAvailableForSubmission(
-        client,
-        authorIds,
-        submissionId,
-      );
 
       const thesisExists = await client.query(
         `SELECT 1 FROM submission_files WHERE submission_id = $1::uuid AND file_type = 'thesis' LIMIT 1`,

@@ -9,6 +9,7 @@ import { JwtService } from "@nestjs/jwt";
 import { AdminSettingsService } from "../admin/admin-settings.service";
 import { ChangePasswordDto } from "./dto/change-password.dto";
 import { LoginDto } from "./dto/login.dto";
+import { RegisterDto } from "./dto/register.dto";
 import { GoogleAuthService } from "./google-auth.service";
 import { UsersService, type UserRecord } from "../users/users.service";
 
@@ -137,6 +138,40 @@ export class AuthService {
       }
       return fail("oauth");
     }
+  }
+
+  async getRegisterOptions() {
+    const faculties = await this.usersService.listActiveFaculties();
+    return { faculties };
+  }
+
+  async register(input: RegisterDto) {
+    const username = input.username.trim().toLowerCase().replace(/@.*$/, "");
+    const existing = await this.usersService.findByUsername(username);
+    if (existing) {
+      throw new BadRequestException("Tên đăng nhập đã tồn tại. Vui lòng chọn tên khác.");
+    }
+    if (!username || username.length < 2) {
+      throw new BadRequestException("Tên đăng nhập phải có ít nhất 2 ký tự.");
+    }
+    if (!input.password || input.password.length < 6) {
+      throw new BadRequestException("Mật khẩu phải có ít nhất 6 ký tự.");
+    }
+    if (!input.displayName || input.displayName.trim().length < 2) {
+      throw new BadRequestException("Họ và tên phải có ít nhất 2 ký tự.");
+    }
+    const faculty = await this.usersService.findActiveFaculty(input.facultyId);
+    if (!faculty) {
+      throw new BadRequestException("Faculty not found");
+    }
+    const user = await this.usersService.createUser({
+      username,
+      password: input.password,
+      displayName: input.displayName.trim(),
+      role: "student",
+      facultyId: faculty.id
+    });
+    return this.sessionResponse(user);
   }
 
   private async assertUserMaySignIn(user: UserRecord) {
