@@ -41,11 +41,20 @@ function renderHeaderUser() {
   const container = document.getElementById('headerUserStatus');
   if (!container) return;
   container.innerHTML = `
-    <div class="user-pill">
-      <span><strong>${currentUser.name}</strong> (${currentUser.email})</span>
-      <span class="role-tag">${currentUser.roleTitle}</span>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <button id="btnOpenPublicKey" class="btn btn-outline btn-sm" style="display:inline-flex; align-items:center; gap:5px; font-size:12px; padding:5px 12px; background:#eff6ff; border-color:#93c5fd; color:#00529c; font-weight:600; border-radius:6px; cursor:pointer;">
+        🔑 Khóa Công Khai (Public Key)
+      </button>
+      <div class="user-pill">
+        <span><strong>${currentUser.name}</strong> (${currentUser.email})</span>
+        <span class="role-tag">${currentUser.roleTitle}</span>
+      </div>
     </div>
   `;
+
+  document.getElementById('btnOpenPublicKey')?.addEventListener('click', () => {
+    showPublicKeyModal();
+  });
 }
 
 /**
@@ -825,6 +834,74 @@ function renderAdminTab(container) {
         </table>
       </div>
 
+      <!-- Cấu hình Kiểu Hiển thị Chữ ký số Lưu chiểu (Admin Options) -->
+      <div class="panel-box" style="margin-bottom:20px; border:2px solid #93c5fd; background:#f8fafc;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid #e2e8f0; padding-bottom:8px;">
+          <div>
+            <h3 style="margin:0; color:#003366; font-size:1.05rem;">⚙️ Cấu Hình Hiển Thị Chữ Ký Số Lưu Chiểu (Admin Settings)</h3>
+            <p style="margin:4px 0 0 0; font-size:0.8rem; color:#64748b;">
+              Chọn 1 trong 3 tùy chọn kiểu hiển thị chữ ký số. Chữ ký được đóng lên <strong>TẤT CẢ CÁC TRANG</strong> của luận văn.
+            </p>
+          </div>
+          <span class="badge" style="background:#00529c; color:#fff; font-size:11px; padding:4px 10px; border-radius:4px; font-weight:bold;">
+            CƠ QUAN KÝ: ĐH BÁCH KHOA TP.HCM
+          </span>
+        </div>
+
+        <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; margin-bottom:14px;">
+          <label class="signature-style-option" style="cursor:pointer; padding:12px; border:2px solid ${WorkflowState.getSignatureStyle()==='margin_strips'?'#00529c':'#cbd5e1'}; border-radius:6px; background:#fff; display:block;">
+            <input type="radio" name="adminSignStyle" value="margin_strips" ${WorkflowState.getSignatureStyle()==='margin_strips'?'checked':''} style="margin-right:6px;">
+            <strong style="color:#003366;">1. Chữ ký số 2 bên lề</strong>
+            <p style="margin:6px 0 0 0; font-size:0.75rem; color:#64748b; line-height:1.4;">
+              Dải chữ ký chạy dọc hai bên mép lề trái và phải của trang giấy trên <strong>tất cả các trang</strong>.
+            </p>
+          </label>
+
+          <label class="signature-style-option" style="cursor:pointer; padding:12px; border:2px solid ${WorkflowState.getSignatureStyle()==='diagonal'?'#00529c':'#cbd5e1'}; border-radius:6px; background:#fff; display:block;">
+            <input type="radio" name="adminSignStyle" value="diagonal" ${WorkflowState.getSignatureStyle()==='diagonal'?'checked':''} style="margin-right:6px;">
+            <strong style="color:#003366;">2. Chữ ký số chéo trang</strong>
+            <p style="margin:6px 0 0 0; font-size:0.75rem; color:#64748b; line-height:1.4;">
+              Dải chữ ký chạy nghiêng chéo góc 45 độ ở trung tâm <strong>tất cả các trang</strong>.
+            </p>
+          </label>
+
+          <label class="signature-style-option" style="cursor:pointer; padding:12px; border:2px solid ${WorkflowState.getSignatureStyle()==='invisible'?'#00529c':'#cbd5e1'}; border-radius:6px; background:#fff; display:block;">
+            <input type="radio" name="adminSignStyle" value="invisible" ${WorkflowState.getSignatureStyle()==='invisible'?'checked':''} style="margin-right:6px;">
+            <strong style="color:#003366;">3. Không chữ ký số (Vô hình)</strong>
+            <p style="margin:6px 0 0 0; font-size:0.75rem; color:#64748b; line-height:1.4;">
+              Ký số bảo toàn mật mã học, không in hình con dấu lên các trang tài liệu.
+            </p>
+          </label>
+        </div>
+
+        <div style="background:#eff6ff; border:1px solid #bfdbfe; padding:10px 14px; border-radius:6px; margin-bottom:14px; font-size:0.82rem;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; flex-wrap:wrap; gap:6px;">
+            <span style="font-weight:600; color:#1e3a8a;">Nội dung con dấu đóng trên các trang:</span>
+            <span style="color:#003366; font-weight:700; background:#fff; padding:2px 8px; border-radius:4px; border:1px solid #93c5fd;">
+              "ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT"
+            </span>
+          </div>
+          <div style="color:#475569; font-size:0.76rem;">
+            * Lưu ý: Hiện tại chưa yêu cầu chữ ký của cá nhân hay mã hóa vào file; con dấu áp dụng đồng nhất chuỗi tên trường trên tất cả các trang.
+          </div>
+        </div>
+
+        <div style="margin-bottom:14px;">
+          <div style="font-size:0.82rem; font-weight:600; color:#003366; margin-bottom:8px;">
+            Mô phỏng hiển thị trên các trang tài liệu (Ký tất cả các trang - All pages preview):
+          </div>
+          <div id="adminLivePagesPreview">
+            ${DigitalSignatureService.renderPagesPreviewHtml(WorkflowState.getSignatureStyle(), 4)}
+          </div>
+        </div>
+
+        <div style="display:flex; justify-content:flex-end;">
+          <button id="btnSaveSignStyleConfig" class="btn btn-primary btn-sm" style="padding:6px 16px;">
+            💾 Lưu Cấu Hình Kiểu Ký Số
+          </button>
+        </div>
+      </div>
+
       <!-- Quản lý tất cả bài nộp -->
       <div class="panel-box">
         <div class="panel-title">Quản lý toàn bộ Luận văn trong Hệ thống</div>
@@ -868,6 +945,27 @@ function renderAdminTab(container) {
       renderAdminTab(container);
       renderSidebar();
     }
+  });
+
+  // Sự kiện thay đổi kiểu ký và xem trước
+  document.querySelectorAll('input[name="adminSignStyle"]').forEach(radio => {
+    radio.addEventListener('change', (e) => {
+      const selectedStyle = e.target.value;
+      const previewBox = document.getElementById('adminLivePagesPreview');
+      if (previewBox) {
+        previewBox.innerHTML = DigitalSignatureService.renderPagesPreviewHtml(selectedStyle, 4);
+      }
+      document.querySelectorAll('.signature-style-option').forEach(card => {
+        const input = card.querySelector('input');
+        card.style.borderColor = input.checked ? '#00529c' : '#cbd5e1';
+      });
+    });
+  });
+
+  document.getElementById('btnSaveSignStyleConfig')?.addEventListener('click', () => {
+    const selected = document.querySelector('input[name="adminSignStyle"]:checked')?.value || 'margin_strips';
+    WorkflowState.setSignatureStyle(selected);
+    alert('Đã lưu cấu hình kiểu hiển thị chữ ký số: ' + selected + '! Mọi bài nộp khi được ký số sẽ tự động áp dụng kiểu này lên tất cả các trang.');
   });
 
   attachTableActionListeners();
@@ -1000,6 +1098,17 @@ function showSubmissionDetailModal(id) {
         ${DigitalSignatureService.renderSignatureSealHtml(item.digitalSignature)}
       </div>
 
+      <!-- Xem trước trang đã ký trên tất cả các trang -->
+      ${item.digitalSignature ? `
+        <div class="panel-box" style="margin-top:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; border-bottom:1px solid #e2e8f0; padding-bottom:6px; flex-wrap:wrap; gap:6px;">
+            <h4 style="font-size:0.85rem; color:#003366; margin:0;">📄 Mô phỏng các trang tài liệu đã ký số (Ký tất cả các trang):</h4>
+            <span style="font-size:0.75rem; color:#059669; font-weight:700;">Áp dụng cho 100% số trang &bull; "${item.digitalSignature.institutionText || 'ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT'}"</span>
+          </div>
+          ${DigitalSignatureService.renderPagesPreviewHtml(item.digitalSignature.signatureStyle || WorkflowState.getSignatureStyle(), 3)}
+        </div>
+      ` : ''}
+
       <!-- Nhật ký xử lý Workflow -->
       <div class="panel-box">
         <h4 style="font-size:0.9rem; color:#003366; margin-bottom:8px;">Lịch sử Luồng kiểm duyệt (Audit Trail)</h4>
@@ -1011,6 +1120,13 @@ function showSubmissionDetailModal(id) {
   `;
 
   openModal('Chi tiết Biểu ghi Luận văn Thạc sĩ', modalHtml);
+
+  document.getElementById('btnToggleCryptoDetails')?.addEventListener('click', () => {
+    const box = document.getElementById('cryptoDetailsContainer');
+    if (box) {
+      box.style.display = box.style.display === 'none' ? 'block' : 'none';
+    }
+  });
 }
 
 /**
@@ -1390,4 +1506,66 @@ function escapeHtml(text) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+
+/**
+ * Hiển thị Modal Khóa Công Khai Thư Viện (Công khai cho tất cả người dùng)
+ */
+function showPublicKeyModal() {
+  const info = DigitalSignatureService.getKeypairInfo();
+  const html = `
+    <div style="display:flex; flex-direction:column; gap:14px;">
+      <div class="alert alert-info" style="margin-bottom:0;">
+        <strong>Khóa Công Khai Thư Viện (BKlib Public Key / X.509 Certificate Profile)</strong><br>
+        Khóa này được công khai cho tất cả người dùng (Học viên, Cán bộ hướng dẫn, Hội đồng, Thư viện, Quản trị viên) để kiểm tra, đối chiếu và xác thực tính toàn vẹn của file luận văn lưu chiểu.
+      </div>
+
+      <div class="panel-box">
+        <table class="dspace-table" style="font-size:0.83rem;">
+          <tr>
+            <td style="width:160px; font-weight:600;">Cơ quan cấp chứng thực:</td>
+            <td><strong>${info.issuer}</strong></td>
+          </tr>
+          <tr>
+            <td style="font-weight:600;">Tên trường trên con dấu:</td>
+            <td><strong style="color:#003366;">${info.institution}</strong></td>
+          </tr>
+          <tr>
+            <td style="font-weight:600;">Mã định danh khóa:</td>
+            <td><code>${info.keyId}</code></td>
+          </tr>
+          <tr>
+            <td style="font-weight:600;">Thuật toán & Tiêu chuẩn:</td>
+            <td>${info.algorithm}</td>
+          </tr>
+          <tr>
+            <td style="font-weight:600;">Dấu vân tay (Fingerprint):</td>
+            <td><code>${info.fingerprint}</code></td>
+          </tr>
+          <tr>
+            <td style="font-weight:600;">Thời hạn chứng thư:</td>
+            <td>${info.validity}</td>
+          </tr>
+        </table>
+      </div>
+
+      <div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+          <strong style="font-size:0.85rem; color:#003366;">Chuỗi Public Key (Định dạng PEM X.509 RSA-2048):</strong>
+          <button id="btnCopyPublicKey" class="btn btn-outline btn-sm" style="font-size:11px; padding:3px 10px; background:#eff6ff;">
+            📋 Sao chép Public Key
+          </button>
+        </div>
+        <textarea id="txtPublicKey" readonly style="width:100%; height:130px; font-family:monospace; font-size:11px; background:#f8fafc; border:1px solid #cbd5e1; border-radius:4px; padding:8px; resize:none;">${info.publicKey}</textarea>
+      </div>
+    </div>
+  `;
+
+  openModal('Khóa Công Khai Thư Viện (BKlib Public Key)', html);
+
+  document.getElementById('btnCopyPublicKey')?.addEventListener('click', () => {
+    navigator.clipboard?.writeText(info.publicKey);
+    alert('Đã sao chép Public Key vào bộ nhớ tạm (Clipboard)!');
+  });
 }

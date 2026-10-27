@@ -677,7 +677,9 @@ export class ReviewsService {
                 algorithm: "SHA-256 with RSA 2048 / PKCS#7",
                 sha256_hash: sha256Hash,
                 certificate_serial: certSerial,
-                issuer: "TRƯỜNG ĐẠI HỌC BÁCH KHOA - ĐHQG-HCM / BKLIB CA ROOT",
+                issuer: "TRƯỜNG ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT / BKLIB CA ROOT",
+                institution_text: "ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT",
+                signed_pages_scope: "Tất cả các trang (100% pages)",
                 signer_name: user.displayName || user.username || "ThS. Lê Hoàng (Thư viện)",
                 signed_at: new Date().toISOString()
               })

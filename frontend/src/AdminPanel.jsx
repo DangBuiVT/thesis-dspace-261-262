@@ -19,7 +19,11 @@ import {
   Tag,
   Typography,
   Upload,
-  message
+  message,
+  Card,
+  Radio,
+  Alert,
+  Descriptions
 } from "antd";
 
 const { Title, Paragraph, Text } = Typography;
@@ -1332,6 +1336,138 @@ export default function AdminPanel({
     </>
   );
 
+
+  const signaturePanel = (
+    <Space direction="vertical" style={{ width: "100%" }} size="middle">
+      <Alert
+        type="info"
+        showIcon
+        message={t("Cấu hình Kiểu Hiển Thị Chữ Ký Số Lưu Chiểu (Admin Settings)")}
+        description={t(
+          "Chọn 1 trong 3 kiểu hiển thị chữ ký số. Chữ ký được đóng lên TẤT CẢ CÁC TRANG của luận văn. Nội dung con dấu chuẩn là 'ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT'."
+        )}
+      />
+
+      <Card size="small" title={t("Tùy chọn kiểu hiển thị chữ ký số")}>
+        <Radio.Group
+          value={signatureStyle}
+          onChange={(e) => {
+            const val = e.target.value;
+            setSignatureStyle(val);
+            localStorage.setItem("bklib_signature_style", val);
+            message.success(t("Đã cập nhật kiểu chữ ký số: ") + val);
+          }}
+          style={{ width: "100%" }}
+        >
+          <Space direction="vertical" style={{ width: "100%" }} size="middle">
+            <Radio value="margin_strips">
+              <Space direction="vertical" size={2}>
+                <Text strong style={{ color: "#003366" }}>1. Chữ ký số 2 bên lề (Margin Strips)</Text>
+                <Text type="secondary" style={{ fontSize: 13 }}>
+                  Con dấu chữ ký chạy dọc hai bên mép lề trang trên <strong>tất cả các trang</strong>, niêm phong toàn trang mà không đè nội dung.
+                </Text>
+              </Space>
+            </Radio>
+            <Divider style={{ margin: "4px 0" }} />
+            <Radio value="diagonal">
+              <Space direction="vertical" size={2}>
+                <Text strong style={{ color: "#003366" }}>2. Chữ ký số chéo trang (Diagonal Ribbon)</Text>
+                <Text type="secondary" style={{ fontSize: 13 }}>
+                  Dải chữ ký chạy nghiêng chéo góc 45 độ ở trung tâm <strong>tất cả các trang</strong> với độ mờ chuẩn, bảo vệ bản quyền toàn diện.
+                </Text>
+              </Space>
+            </Radio>
+            <Divider style={{ margin: "4px 0" }} />
+            <Radio value="invisible">
+              <Space direction="vertical" size={2}>
+                <Text strong style={{ color: "#003366" }}>3. Không chữ ký số (Vô hình - Invisible)</Text>
+                <Text type="secondary" style={{ fontSize: 13 }}>
+                  Ký số bảo toàn mật mã học thuần túy, không in hình chữ ký lên trang giấy, giữ bề mặt tài liệu hoàn toàn sạch sẽ.
+                </Text>
+              </Space>
+            </Radio>
+          </Space>
+        </Radio.Group>
+      </Card>
+
+      <Card size="small" title={t("Thông số con dấu & Tiêu chuẩn")}>
+        <Descriptions bordered size="small" column={1}>
+          <Descriptions.Item label={t("Cơ quan ký")}>TRƯỜNG ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT / BKLIB CA ROOT</Descriptions.Item>
+          <Descriptions.Item label={t("Nội dung con dấu")}>
+            <strong style={{ color: "#003366" }}>"ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT"</strong>
+          </Descriptions.Item>
+          <Descriptions.Item label={t("Phạm vi ký trang")}>
+            <Tag color="blue">Ký số trên TẤT CẢ CÁC TRANG (100% pages)</Tag>
+          </Descriptions.Item>
+          <Descriptions.Item label={t("Thuật toán")}>SHA-256 with RSA (2048-bit) / PAdES</Descriptions.Item>
+        </Descriptions>
+      </Card>
+
+      <Card size="small" title={t("Mô phỏng hiển thị trên các trang tài liệu (All pages preview)")}>
+        <div style={{ display: "flex", gap: 12, overflowX: "auto", padding: "10px 4px" }}>
+          {[1, 2, 3, 4].map((page) => (
+            <div
+              key={page}
+              style={{
+                position: "relative",
+                width: 140,
+                height: 190,
+                background: "#ffffff",
+                border: "1px solid #cbd5e1",
+                borderRadius: 4,
+                boxShadow: "0 2px 4px rgba(0,0,0,0.06)",
+                padding: "10px 18px",
+                overflow: "hidden",
+                fontSize: 8,
+                color: "#64748b",
+                flexShrink: 0
+              }}
+            >
+              <div style={{ fontWeight: "bold", color: "#1e293b", borderBottom: "1px solid #e2e8f0", paddingBottom: 3, marginBottom: 6, textAlign: "center" }}>
+                TRANG {page}
+              </div>
+              <div style={{ height: 3, background: "#e2e8f0", borderRadius: 2, marginBottom: 4, width: "80%" }} />
+              <div style={{ height: 3, background: "#f1f5f9", borderRadius: 2, marginBottom: 4, width: "95%" }} />
+              <div style={{ height: 3, background: "#f1f5f9", borderRadius: 2, marginBottom: 4, width: "90%" }} />
+              <div style={{ height: 3, background: "#f1f5f9", borderRadius: 2, marginBottom: 4, width: "85%" }} />
+              <div style={{ height: 3, background: "#f1f5f9", borderRadius: 2, marginBottom: 4, width: "92%" }} />
+              <div style={{ height: 3, background: "#f1f5f9", borderRadius: 2, marginBottom: 4, width: "60%" }} />
+
+              {signatureStyle === "margin_strips" && (
+                <>
+                  <div style={{ position: "absolute", left: 2, top: 10, bottom: 10, width: 16, borderRight: "2px solid #00529c", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <div style={{ writingMode: "vertical-rl", transform: "rotate(180deg)", fontSize: 7, fontWeight: "bold", color: "#003366", letterSpacing: 0.5, whiteSpace: "nowrap" }}>
+                      ĐH BÁCH KHOA TP.HCM - HCMUT
+                    </div>
+                  </div>
+                  <div style={{ position: "absolute", right: 2, top: 10, bottom: 10, width: 16, borderLeft: "2px solid #00529c", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <div style={{ writingMode: "vertical-rl", fontSize: 7, fontWeight: "bold", color: "#003366", letterSpacing: 0.5, whiteSpace: "nowrap" }}>
+                      ĐH BÁCH KHOA TP.HCM - HCMUT
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {signatureStyle === "diagonal" && (
+                <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+                  <div style={{ transform: "rotate(-45deg)", fontSize: 8.5, fontWeight: "bold", color: "rgba(0,51,102,0.22)", border: "1px dashed rgba(0,51,102,0.3)", padding: "4px 8px", borderRadius: 3, whiteSpace: "nowrap", textAlign: "center" }}>
+                    🏛️ ĐH BÁCH KHOA - HCMUT
+                  </div>
+                </div>
+              )}
+
+              {signatureStyle === "invisible" && (
+                <div style={{ position: "absolute", bottom: 6, right: 6, fontSize: 7, color: "#94a3b8", fontStyle: "italic" }}>
+                  [Ký vô hình PAdES]
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </Card>
+    </Space>
+  );
+
   const tabItems = [
     {
       key: "users",
@@ -1469,6 +1605,11 @@ export default function AdminPanel({
       key: "email",
       label: t("Email configuration"),
       children: emailPanel
+    },
+    {
+      key: "signature-config",
+      label: t("Cấu hình Chữ ký số"),
+      children: signaturePanel
     },
     {
       key: "archive",

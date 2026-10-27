@@ -109,6 +109,14 @@ export const WorkflowState = {
     return initial;
   },
 
+  getSignatureStyle() {
+    return localStorage.getItem('bklib_signature_style') || 'margin_strips';
+  },
+
+  setSignatureStyle(styleKey) {
+    localStorage.setItem('bklib_signature_style', styleKey);
+  },
+
   getDefaultSubmissions() {
     return [
       {
@@ -169,14 +177,24 @@ export const WorkflowState = {
           isSigned: true,
           signatureHash: 'e7a1b490f23cd8192a54b68e9102c7f5491a62d083bc9571fa08d27341ea2bc1',
           certificateSerial: 'BK-VN-2026-08811',
-          algorithm: 'SHA-256 with RSA (2048 bits)',
+          algorithm: 'SHA-256 with RSA (2048-bit) / PKCS#7 / PAdES Standard',
           signedAt: '2026-10-14T16:00:00.000Z',
           signedAtFormatted: 'Thứ Tư, ngày 14 tháng 10 năm 2026, 16:00:00',
-          issuer: 'TRƯỜNG ĐẠI HỌC BÁCH KHOA - ĐHQG-HCM / BKLIB CA ROOT',
-          signerName: 'ThS. Lê Hoàng',
+          issuer: 'TRƯỜNG ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT / BKLIB CA ROOT',
+          institutionText: 'ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT',
+          signerName: 'ThS. Lê Hoàng (Thư viện)',
           signerEmail: 'lehoang.13291@gmail.com',
           signerDepartment: 'Tổ Nghiệp vụ Thư viện',
-          validity: 'Vĩnh viễn'
+          validity: 'Vĩnh viễn (Lưu chiểu quốc gia & Kho tri thức số DSpace HCMUT)',
+          signatureStyle: 'margin_strips',
+          signatureStyleName: 'Chữ ký số 2 bên lề',
+          signatureStyleBadge: '2 BÊN LỀ (MARGIN STRIPS)',
+          signedPagesScope: 'Tất cả các trang (100% pages)',
+          cryptoAudit: {
+            payload: '{"institution":"ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT","collectionId":"99c8f87a-a3a8-45bb-9ee7-1992d0ece528","title":"Quy trình chuyển luận văn và tích hợp kiểm duyệt đa cấp trên nền tảng DSpace","author":"Nguyễn Trung Hiếu","advisor":"PGS. TS. Nguyễn Thế Hưng","fileName":"LuanVan_ThacSi_NguyenTrungHieu_2170123.pdf","signedBy":"lehoang.13291@gmail.com","style":"margin_strips","signedPages":"Tất cả các trang (100% pages)"}',
+            keyId: 'BKLIB-RSA-2048-HCMUT-2026',
+            fingerprint: '3F:BC:21:F7:99:C8:F8:7A:A3:A8:45:BB:9E:E7:19:92:D0:EC:E5:28:88:11'
+          }
         }
       },
       {
@@ -383,12 +401,13 @@ export const WorkflowState = {
 
     const nowStr = new Date().toLocaleString('vi-VN');
 
-    // Tích hợp chữ ký số điện tử của Thư viện
+    // Tích hợp chữ ký số điện tử của Thư viện với kiểu ký Admin đã cấu hình
+    const currentStyle = this.getSignatureStyle();
     const signature = await DigitalSignatureService.signSubmission(item, {
       name: 'ThS. Lê Hoàng',
       email: 'lehoang.13291@gmail.com',
       department: 'Tổ Nghiệp vụ Thư viện Bách Khoa'
-    });
+    }, currentStyle);
     item.digitalSignature = signature;
 
     // Tự động sinh mã Handle ID vĩnh viễn trên DSpace

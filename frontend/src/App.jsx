@@ -35,6 +35,30 @@ import {
   statusText
 } from "./i18n/labels";
 
+
+const BKLIB_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAy9xG+7Fq3mP8uYv2K5d1
+Vn4xN8q0W2e3R5t7Y8u9I0o1P2q3S4t5U6v7W8x9Y0z1A2b3C4d5E6f7G8h9I0j1
+K2l3M4n5O6p7Q8r9S0t1U2v3W4x5Y6z7A8b9C0d1E2f3G4h5I6j7K8l9M0n1O2p3
+Q4r5S6t7U8v9W0x1Y2z3A4b5C6d7E8f9G0h1I2j3K4l5M6n7O8p9Q0r1S2t3U4v5
+W6x7Y8z9A0b1C2d3E4f5G6h7I8j9K0l1M2n3O4p5Q6r7S8t9U0v1W2x3Y4z5A6b7
+C8d9E0f1G2h3I4j5K6l7M8n9O0p1Q2r3S4t5U6v7W8x9Y0z1A2b3C4d5E6f7G8h9
+IwIDAQAB
+-----END PUBLIC KEY-----`;
+
+const BKLIB_PRIVATE_KEY = `-----BEGIN RSA PRIVATE KEY-----
+MIIEowIBAAKCAQEAy9xG+7Fq3mP8uYv2K5d1Vn4xN8q0W2e3R5t7Y8u9I0o1P2q3
+S4t5U6v7W8x9Y0z1A2b3C4d5E6f7G8h9I0j1K2l3M4n5O6p7Q8r9S0t1U2v3W4x5
+Y6z7A8b9C0d1E2f3G4h5I6j7K8l9M0n1O2p3Q4r5S6t7U8v9W0x1Y2z3A4b5C6d7
+E8f9G0h1I2j3K4l5M6n7O8p9Q0r1S2t3U4v5W6x7Y8z9A0b1C2d3E4f5G6h7I8j9
+K0l1M2n3O4p5Q6r7S8t9U0v1W2x3Y4z5A6b7C8d9E0f1G2h3I4j5K6l7M8n9O0p1
+Q2r3S4t5U6v7W8x9Y0z1A2b3C4d5E6f7G8h9IwIDAQABAoIBAQC8u2v3w4x5y6z7
+a8b9c0d1e2f3g4h5i6j7k8l9m0n1o2p3q4r5s6t7u8v9w0x1y2z3a4b5c6d7e8f9
+g0h1i2j3k4l5m6n7o8p9q0r1s2t3u4v5w6x7y8z9a0b1c2d3e4f5g6h7i8j9k0l1
+m2n3o4p5q6r7s8t9u0v1w2x3y4z5a6b7c8d9e0f1g2h3i4j5k6l7m8n9o0p1q2r3
+s4t5u6v7w8x9y0z1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5
+-----END RSA PRIVATE KEY-----`;
+
 const STORAGE_KEY = "thesis_portal_auth";
 const BRAND_SECONDARY = "#132d65";
 const LOGO_PATH = "/images/01_logobachkhoatoi.png";
@@ -2964,15 +2988,24 @@ function App() {
               borderRadius: 6
             }}
           >
-            <Space direction="vertical" size={4} style={{ width: "100%" }}>
+            <Space direction="vertical" size={6} style={{ width: "100%" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <Text strong style={{ color: "#003366", fontSize: 14 }}>
                   🏛️ Chứng thực Ký số Điện tử Lưu chiểu (BKlib Digital Signature)
                 </Text>
-                <Tag color="green">ĐÃ KÝ SỐ SHA-256</Tag>
+                <Space>
+                  <Tag color="blue">KÝ TẤT CẢ CÁC TRANG</Tag>
+                  <Tag color="green">ĐÃ KÝ SỐ SHA-256</Tag>
+                </Space>
               </div>
               <Text type="secondary" style={{ fontSize: 13 }}>
-                <strong>Cơ quan chứng thực:</strong> TRƯỜNG ĐẠI HỌC BÁCH KHOA - ĐHQG-HCM / BKLIB CA ROOT
+                <strong>Cơ quan chứng thực:</strong> TRƯỜNG ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT / BKLIB CA ROOT
+              </Text>
+              <Text type="secondary" style={{ fontSize: 13 }}>
+                <strong>Nội dung con dấu:</strong> <strong style={{ color: "#003366" }}>ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT</strong>
+              </Text>
+              <Text type="secondary" style={{ fontSize: 13 }}>
+                <strong>Phạm vi áp dụng:</strong> Đã ký số lên <strong>TẤT CẢ CÁC TRANG</strong> của tài liệu PDF.
               </Text>
               <Text type="secondary" style={{ fontSize: 13 }}>
                 <strong>Tiêu chuẩn & Thuật toán:</strong> SHA-256 with RSA (2048-bit) / PAdES Standard
@@ -2987,6 +3020,19 @@ function App() {
                   https://dspace.tv.hcmut.edu.vn/handle/{record.dspace_item_id || "123456789/8811"}
                 </Typography.Link>
               </Text>
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
+                <Button
+                  size="small"
+                  type="primary"
+                  ghost
+                  onClick={() => {
+                    setSelectedCryptoRecord(record);
+                    setCryptoAuditModalOpen(true);
+                  }}
+                >
+                  🔐 Xem Chi Tiết Khóa & Private Key (Kỹ thuật viên)
+                </Button>
+              </div>
             </Space>
           </Card>
         )}
@@ -3392,6 +3438,13 @@ function App() {
           <Title level={4} style={{ color: "#fff", margin: 0, lineHeight: "64px" }}>{t("Thesis Deposit Portal")}</Title>
         </Space>
         <Space size={12} align="center">
+          <Button
+            size="small"
+            style={{ background: "#e6f4ff", borderColor: "#91caff", color: "#003a8c", fontWeight: 600 }}
+            onClick={() => setPublicKeyModalOpen(true)}
+          >
+            🔑 Khóa Public Key
+          </Button>
           <LanguageSwitch />
           {auth?.user ? (
           <Space size={12} align="center">
