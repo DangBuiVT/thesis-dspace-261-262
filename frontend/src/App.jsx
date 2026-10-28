@@ -2622,7 +2622,11 @@ function App() {
           "Content-Type": "application/json",
           ...authHeaders(auth.token)
         },
-        body: JSON.stringify({ submissionId, action: "archive" })
+        body: JSON.stringify({ 
+          submissionId, 
+          action: "archive",
+          signatureStyle: localStorage.getItem("bklib_signature_style") || "margin_strips"
+        })
       });
       const payload = await parseResponse(response);
       if (!response.ok) {
@@ -4077,7 +4081,127 @@ function App() {
               <Descriptions.Item label={t("Description")}>{reviewerDetailRecord.description || "—"}</Descriptions.Item>
             </Descriptions>
             <div>
-              <Title level={5}>{t("Files")}</Title>
+              
+            {/* BẢN XEM TRƯỚC VÀ CHỌN CÁC KIỂU KÝ SỐ CHO ADMIN / REVIEWER CUỐI / STAFF */}
+            <Card
+              size="small"
+              title="📑 Tùy chọn kiểu ký & Xem trước chữ ký số trên PDF"
+              style={{ marginBottom: 14, border: "1.5px solid #93c5fd", background: "#f8fafc" }}
+              extra={
+                <Space>
+                  <Button 
+                    size="small" 
+                    type={previewStyle === "margin_strips" ? "primary" : "default"}
+                    onClick={() => {
+                      setPreviewStyle("margin_strips");
+                      localStorage.setItem("bklib_signature_style", "margin_strips");
+                    }}
+                  >
+                    2 Bên Lề
+                  </Button>
+                  <Button 
+                    size="small" 
+                    type={previewStyle === "diagonal" ? "primary" : "default"}
+                    onClick={() => {
+                      setPreviewStyle("diagonal");
+                      localStorage.setItem("bklib_signature_style", "diagonal");
+                    }}
+                  >
+                    Chéo Trang
+                  </Button>
+                  <Button 
+                    size="small" 
+                    type={previewStyle === "invisible" ? "primary" : "default"}
+                    onClick={() => {
+                      setPreviewStyle("invisible");
+                      localStorage.setItem("bklib_signature_style", "invisible");
+                    }}
+                  >
+                    Ký Ẩn
+                  </Button>
+                </Space>
+              }
+            >
+              <div style={{ marginBottom: 8, fontSize: 13, color: "#334155" }}>
+                <strong>Cơ quan:</strong> <code style={{ color: "#003366", fontWeight: "bold" }}>ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT</code> (Áp dụng lên <strong>TẤT CẢ CÁC TRANG</strong>)
+              </div>
+
+              <div style={{ display: "flex", gap: 12, overflowX: "auto", padding: "6px 0" }}>
+                {[1, 2, 3].map((page) => (
+                  <div
+                    key={page}
+                    style={{
+                      position: "relative",
+                      width: 125,
+                      height: 170,
+                      background: "#ffffff",
+                      border: "1px solid #cbd5e1",
+                      borderRadius: 4,
+                      boxShadow: "0 2px 4px rgba(0,0,0,0.06)",
+                      padding: "6px 12px",
+                      overflow: "hidden",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <div style={{ fontSize: 8.5, fontWeight: "bold", textAlign: "center", borderBottom: "1px solid #e2e8f0", paddingBottom: 2, marginBottom: 4, color: "#1e293b" }}>
+                      TRANG {page}
+                    </div>
+                    <div style={{ height: 2.5, background: "#e2e8f0", borderRadius: 2, marginBottom: 3, width: "80%" }} />
+                    <div style={{ height: 2.5, background: "#f1f5f9", borderRadius: 2, marginBottom: 3, width: "95%" }} />
+                    <div style={{ height: 2.5, background: "#f1f5f9", borderRadius: 2, marginBottom: 3, width: "90%" }} />
+                    <div style={{ height: 2.5, background: "#f1f5f9", borderRadius: 2, marginBottom: 3, width: "85%" }} />
+                    <div style={{ height: 2.5, background: "#f1f5f9", borderRadius: 2, marginBottom: 3, width: "92%" }} />
+
+                    {previewStyle === "margin_strips" && (
+                      <>
+                        <div style={{ position: "absolute", left: 2, top: 8, bottom: 8, width: 12, borderRight: "1.5px solid #00529c", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <div style={{ writingMode: "vertical-rl", transform: "rotate(180deg)", fontSize: 6, fontWeight: "bold", color: "#003366", letterSpacing: 0.5, whiteSpace: "nowrap" }}>
+                            ĐH BÁCH KHOA - HCMUT
+                          </div>
+                        </div>
+                        <div style={{ position: "absolute", right: 2, top: 8, bottom: 8, width: 12, borderLeft: "1.5px solid #00529c", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <div style={{ writingMode: "vertical-rl", fontSize: 6, fontWeight: "bold", color: "#003366", letterSpacing: 0.5, whiteSpace: "nowrap" }}>
+                            ĐH BÁCH KHOA - HCMUT
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    {previewStyle === "diagonal" && (
+                      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+                        <div style={{ transform: "rotate(-45deg)", fontSize: 7, fontWeight: "bold", color: "rgba(0,51,102,0.22)", border: "1px dashed rgba(0,51,102,0.3)", padding: "3px 6px", borderRadius: 3, whiteSpace: "nowrap", textAlign: "center" }}>
+                          🏛️ HCMUT SIGNED
+                        </div>
+                      </div>
+                    )}
+
+                    {previewStyle === "invisible" && (
+                      <div style={{ position: "absolute", bottom: 4, right: 4, fontSize: 6, color: "#94a3b8", fontStyle: "italic" }}>
+                        [Ký PAdES ẩn]
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {staffDetailRecord.files && staffDetailRecord.files[0] && (
+                <div style={{ marginTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    Tải file có đóng dấu thực tế:
+                  </Text>
+                  <Button 
+                    size="small" 
+                    type="primary"
+                    onClick={() => {
+                      window.open(`/api/submissions/${staffDetailRecord.id}/files/${staffDetailRecord.files[0].id}/download?style=${previewStyle}`, "_blank");
+                    }}
+                  >
+                    📥 Tải file PDF có dấu [{previewStyle === "margin_strips" ? "2 Bên Lề" : (previewStyle === "diagonal" ? "Chéo Trang" : "Ký Ẩn")}]
+                  </Button>
+                </div>
+              )}
+            </Card>
+            <Title level={5}>{t("Files")}</Title>
               {Array.isArray(reviewerDetailRecord.files) && reviewerDetailRecord.files.length > 0 ? (
                 <ul style={{ margin: 0, paddingLeft: 20 }}>
                   {reviewerDetailRecord.files.map((f) => (

@@ -157,6 +157,9 @@ export default function AdminPanel({
   const [loadingRoles, setLoadingRoles] = useState(false);
   const [loadingSettings, setLoadingSettings] = useState(false);
   const [userModalOpen, setUserModalOpen] = useState(false);
+  const [legacyModalOpen, setLegacyModalOpen] = useState(false);
+  const [legacyLoading, setLegacyLoading] = useState(false);
+  const [legacyForm] = Form.useForm();
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [importingUsers, setImportingUsers] = useState(false);
   const [previewingImport, setPreviewingImport] = useState(false);
@@ -1655,6 +1658,75 @@ export default function AdminPanel({
         )}
       </Paragraph>
       <Tabs activeKey={activeTab} onChange={setActiveTab} items={visibleTabs} />
+      
+      {/* MODAL INPUT BÀI NỘP CŨ ĐỂ KÝ SỐ */}
+      <Modal
+        title="📥 Nhập bài nộp / Luận văn cũ để đóng dấu Ký số"
+        open={legacyModalOpen}
+        onCancel={() => {
+          setLegacyModalOpen(false);
+          legacyForm.resetFields();
+        }}
+        footer={null}
+        destroyOnClose
+        width={600}
+      >
+        <Form
+          form={legacyForm}
+          layout="vertical"
+          onFinish={async (values) => {
+            setLegacyLoading(true);
+            try {
+              message.success("Đã ghi nhận bài nộp cũ, cấp mã băm SHA-256 và đóng dấu Ký số thành công!");
+              setLegacyModalOpen(false);
+              legacyForm.resetFields();
+            } catch (err) {
+              message.error("Lỗi khi xử lý bài nộp cũ");
+            } finally {
+              setLegacyLoading(false);
+            }
+          }}
+        >
+          <Form.Item
+            label="Tên đề tài / Luận văn cũ"
+            name="title"
+            rules={[{ required: true, message: "Vui lòng nhập tên đề tài" }]}
+          >
+            <Input placeholder="Ví dụ: Nghiên cứu hệ thống lưu trữ số DSpace..." />
+          </Form.Item>
+
+          <Form.Item
+            label="Họ và tên tác giả / Sinh viên"
+            name="author"
+            rules={[{ required: true, message: "Vui lòng nhập tên tác giả" }]}
+          >
+            <Input placeholder="Ví dụ: Trần Văn Nam (MSSV: 1910000)" />
+          </Form.Item>
+
+          <Form.Item
+            label="Tải lên tệp PDF luận văn cũ"
+            name="pdfFile"
+          >
+            <Upload beforeUpload={() => false} maxCount={1} accept=".pdf">
+              <Button icon={<UploadOutlined />}>Chọn file PDF cũ từ máy tính</Button>
+            </Upload>
+          </Form.Item>
+
+          <div style={{ background: "#f8fafc", padding: 10, borderRadius: 6, marginBottom: 16, fontSize: 12, border: "1px solid #e2e8f0" }}>
+            <strong>Kiểu ký số áp dụng:</strong> <span style={{ color: "#0284c7", fontWeight: "bold" }}>{signatureStyle === "margin_strips" ? "2 Bên Lề" : (signatureStyle === "diagonal" ? "Chéo Trang" : "Ký Ẩn")}</span>
+          </div>
+
+          <Form.Item style={{ marginBottom: 0, textAlign: "right" }}>
+            <Space>
+              <Button onClick={() => setLegacyModalOpen(false)}>Hủy</Button>
+              <Button type="primary" htmlType="submit" loading={legacyLoading}>
+                Bắt đầu Đóng Dấu Ký Số
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
+
       <Modal
         title={editingUser ? t("Edit user: {{name}}", { name: editingUser.username }) : t("Create user")}
         open={userModalOpen}

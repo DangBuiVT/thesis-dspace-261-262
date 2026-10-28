@@ -1,4 +1,4 @@
-import {
+﻿import {
   BadRequestException,
   ForbiddenException,
   Injectable,
@@ -681,7 +681,13 @@ export class ReviewsService {
                 institution_text: "ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT",
                 signed_pages_scope: "Tất cả các trang (100% pages)",
                 signer_name: user.displayName || user.username || "ThS. Lê Hoàng (Thư viện)",
-                signed_at: new Date().toISOString()
+                signed_at: new Date().toISOString(),
+                signature_style: dto.signatureStyle || (dto.metadata as any)?.signatureStyle || "margin_strips",
+                signature_style_name: (dto.signatureStyle === "diagonal" || (dto.metadata as any)?.signatureStyle === "diagonal") 
+                  ? "Chữ ký số chéo trang" 
+                  : ((dto.signatureStyle === "invisible" || (dto.metadata as any)?.signatureStyle === "invisible") 
+                    ? "Không chữ ký số (Vô hình)" 
+                    : "Chữ ký số 2 bên lề")
               })
             ]
           );
