@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+﻿import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
   Alert,
   Button,
@@ -648,8 +648,8 @@ async function parseResponse(response) {
 function authHeaders(token) {
   return token
     ? {
-        Authorization: `Bearer ${token}`
-      }
+      Authorization: `Bearer ${token}`
+    }
     : {};
 }
 
@@ -657,8 +657,8 @@ function App() {
   const { t, lang } = useI18n();
   const tr = (value) => translateApiMessage(value, t);
   const [loginForm] = Form.useForm();
-  const [showRegister, setShowRegister] = React.useState(false);
-  const [registerLoading, setRegisterLoading] = React.useState(false);
+  const [showRegister, setShowRegister] = useState(false);
+  const [registerLoading, setRegisterLoading] = useState(false);
   const [registerForm] = Form.useForm();
   const [passwordForm] = Form.useForm();
   const [submissionForm] = Form.useForm();
@@ -951,9 +951,9 @@ function App() {
             field.inputType === "year"
               ? THESIS_YEAR_OPTIONS
               : (field.options || []).map((option) => ({
-                  value: option.value,
-                  label: optionDisplayLabel(option, t)
-                }))
+                value: option.value,
+                label: optionDisplayLabel(option, t)
+              }))
           }
           placeholder={label}
         />
@@ -1078,13 +1078,13 @@ function App() {
       editingSubmissionRecord
         ? getStudentSubmissionCapabilities(editingSubmissionRecord, actingStudentId, studentSubmissions)
         : {
-            canEdit: Boolean(actingStudentId),
-            canDelete: false,
-            canRevertToDraft: false,
-            canSubmit:
-              Boolean(actingStudentId) &&
-              canStudentSubmitThesis(studentSubmissions, actingStudentId, null, null)
-          },
+          canEdit: Boolean(actingStudentId),
+          canDelete: false,
+          canRevertToDraft: false,
+          canSubmit:
+            Boolean(actingStudentId) &&
+            canStudentSubmitThesis(studentSubmissions, actingStudentId, null, null)
+        },
     [editingSubmissionRecord, studentSubmissions, actingStudentId]
   );
 
@@ -1835,11 +1835,11 @@ function App() {
       if (!response.ok) {
         throw new Error(
           payload?.message ||
-            (response.status === 401
-              ? "Invalid username or password"
-              : response.status === 403
-                ? "Password login is disabled. Use Google sign-in."
-                : "Login failed. Please check backend server and API URL.")
+          (response.status === 401
+            ? "Invalid username or password"
+            : response.status === 403
+              ? "Password login is disabled. Use Google sign-in."
+              : "Login failed. Please check backend server and API URL.")
         );
       }
 
@@ -2271,9 +2271,9 @@ function App() {
       content: archived
         ? hasDspace
           ? t('Delete "{{title}}" from Portal and remove the linked DSpace item ({{id}})? This cannot be undone.', {
-              title,
-              id: record.dspace_item_id
-            })
+            title,
+            id: record.dspace_item_id
+          })
           : t('Delete archived submission "{{title}}"? This cannot be undone.', { title })
         : t('Delete "{{title}}"? This cannot be undone.', { title }),
       okText: t("Delete"),
@@ -2630,12 +2630,12 @@ function App() {
       if (payload?.dspaceDeferred) {
         message.success(
           tr(payload?.message) ||
-            t("Submission archived to period. Push to DSpace later from Archive configuration.")
+          t("Submission archived to period. Push to DSpace later from Archive configuration.")
         );
       } else if (payload?.dspacePublishError) {
         message.warning(
           tr(payload?.dspacePublishMessage) ||
-            t("Archived in Portal, but DSpace publish failed — check DSpace settings, collection sync, and logs")
+          t("Archived in Portal, but DSpace publish failed — check DSpace settings, collection sync, and logs")
         );
       } else if (payload?.dspacePlaceholder) {
         message.warning(
@@ -3117,344 +3117,344 @@ function App() {
       : null;
 
     return (
-                <>
-                  {showStudentRecordDetail ? (
-                    <>
-                      <Space wrap style={{ width: "100%", justifyContent: "space-between", marginBottom: 12 }}>
-                        <Title level={5} style={{ margin: 0 }}>
-                          {studentFocusRecord.status === "draft" ? t("Draft details") : t("Submission details")}
-                        </Title>
-                        <Space>
-                          {focusCaps?.canEdit ? (
-                            <Button type="primary" onClick={() => void loadSubmissionIntoForm(studentFocusRecord)}>{t("Edit")}</Button>
-                          ) : null}
-                          {focusCaps?.canDelete ? (
-                            <Button
-                              danger
-                              loading={isDeletingSubmission}
-                              onClick={() => promptDeleteSubmission(studentFocusRecord)}
-                            >{t("Delete")}</Button>
-                          ) : null}
-                        </Space>
-                      </Space>
-                      {renderSubmissionDetailBody(studentFocusRecord)}
-                    </>
-                  ) : (
-                    <>
-                  {isAdminActor ? (
-                    <Paragraph type="secondary">
-                      {t(
-                        "Create a draft or submit a thesis on behalf of a student. The selected student remains the submitter."
-                      )}
-                    </Paragraph>
-                  ) : null}
-                  <Form layout="vertical" form={submissionForm} autoComplete="off">
-                    {isAdminActor ? (
-                      <Form.Item name="studentId" hidden>
-                        <Input />
-                      </Form.Item>
-                    ) : null}
-                    {showNative("archiveFacultyId") ? (
-                    <Form.Item
-                      label={t("Faculty")}
-                      name="archiveFacultyId"
-                      rules={structuralRequired("archiveFacultyId") ? [{ required: true, message: t("This student is not assigned to a faculty") }] : []}
-                    >
-                      <Select
-                        placeholder={t("Student faculty")}
-                        loading={isLoadingArchiveFaculties}
-                        options={facultySelectOptions}
-                        disabled
-                        notFoundContent={
-                          isLoadingArchiveFaculties ? t("Loading...") : t("No faculty assigned")
-                        }
-                      />
-                    </Form.Item>
-                    ) : renderAlternateField("archiveFacultyId")}
-                    {showNative("archiveSemesterId") ? (
-                    <Form.Item
-                      label={t("Semester")}
-                      name="archiveSemesterId"
-                      rules={structuralRequired("archiveSemesterId") ? [{ required: true, message: t("Please select a semester") }] : []}
-                    >
-                      <Select
-                        showSearch
-                        allowClear
-                        placeholder={t("Select semester")}
-                        optionFilterProp="label"
-                        loading={isLoadingArchiveSemesters}
-                        options={archiveSemesters}
-                        disabled={!archiveFacultyId || !canChangeSubmissionPeriod}
-                        onChange={(value) => void handleArchiveSemesterChange(value)}
-                        notFoundContent={isLoadingArchiveSemesters ? t("Loading...") : t("Select a faculty first")}
-                      />
-                    </Form.Item>
-                    ) : renderAlternateField("archiveSemesterId")}
-                    {showNative("submissionPeriodId") ? (
-                    <Form.Item
-                      label={t("Submission period")}
-                      name="submissionPeriodId"
-                      rules={structuralRequired("submissionPeriodId") ? [{ required: true, message: t("Please select a submission period") }] : []}
-                    >
-                      <Select
-                        showSearch
-                        allowClear
-                        placeholder={t("Select open submission period")}
-                        optionFilterProp="label"
-                        loading={isLoadingArchivePeriods}
-                        disabled={!archiveSemesterId || !canChangeSubmissionPeriod}
-                        onChange={handleSubmissionPeriodChange}
-                        options={archivePeriods.map((p) => ({
-                          value: p.id,
-                          label: p.closesAt
-                            ? t("{{name}} (closes {{date}})", { name: p.name, date: formatDate(p.closesAt, lang) })
-                            : p.name
-                        }))}
-                        notFoundContent={
-                          isLoadingArchivePeriods ? t("Loading...") : t("No open periods for this semester")
-                        }
-                      />
-                    </Form.Item>
-                    ) : renderAlternateField("submissionPeriodId")}
+      <>
+        {showStudentRecordDetail ? (
+          <>
+            <Space wrap style={{ width: "100%", justifyContent: "space-between", marginBottom: 12 }}>
+              <Title level={5} style={{ margin: 0 }}>
+                {studentFocusRecord.status === "draft" ? t("Draft details") : t("Submission details")}
+              </Title>
+              <Space>
+                {focusCaps?.canEdit ? (
+                  <Button type="primary" onClick={() => void loadSubmissionIntoForm(studentFocusRecord)}>{t("Edit")}</Button>
+                ) : null}
+                {focusCaps?.canDelete ? (
+                  <Button
+                    danger
+                    loading={isDeletingSubmission}
+                    onClick={() => promptDeleteSubmission(studentFocusRecord)}
+                  >{t("Delete")}</Button>
+                ) : null}
+              </Space>
+            </Space>
+            {renderSubmissionDetailBody(studentFocusRecord)}
+          </>
+        ) : (
+          <>
+            {isAdminActor ? (
+              <Paragraph type="secondary">
+                {t(
+                  "Create a draft or submit a thesis on behalf of a student. The selected student remains the submitter."
+                )}
+              </Paragraph>
+            ) : null}
+            <Form layout="vertical" form={submissionForm} autoComplete="off">
+              {isAdminActor ? (
+                <Form.Item name="studentId" hidden>
+                  <Input />
+                </Form.Item>
+              ) : null}
+              {showNative("archiveFacultyId") ? (
+                <Form.Item
+                  label={t("Faculty")}
+                  name="archiveFacultyId"
+                  rules={structuralRequired("archiveFacultyId") ? [{ required: true, message: t("This student is not assigned to a faculty") }] : []}
+                >
+                  <Select
+                    placeholder={t("Student faculty")}
+                    loading={isLoadingArchiveFaculties}
+                    options={facultySelectOptions}
+                    disabled
+                    notFoundContent={
+                      isLoadingArchiveFaculties ? t("Loading...") : t("No faculty assigned")
+                    }
+                  />
+                </Form.Item>
+              ) : renderAlternateField("archiveFacultyId")}
+              {showNative("archiveSemesterId") ? (
+                <Form.Item
+                  label={t("Semester")}
+                  name="archiveSemesterId"
+                  rules={structuralRequired("archiveSemesterId") ? [{ required: true, message: t("Please select a semester") }] : []}
+                >
+                  <Select
+                    showSearch
+                    allowClear
+                    placeholder={t("Select semester")}
+                    optionFilterProp="label"
+                    loading={isLoadingArchiveSemesters}
+                    options={archiveSemesters}
+                    disabled={!archiveFacultyId || !canChangeSubmissionPeriod}
+                    onChange={(value) => void handleArchiveSemesterChange(value)}
+                    notFoundContent={isLoadingArchiveSemesters ? t("Loading...") : t("Select a faculty first")}
+                  />
+                </Form.Item>
+              ) : renderAlternateField("archiveSemesterId")}
+              {showNative("submissionPeriodId") ? (
+                <Form.Item
+                  label={t("Submission period")}
+                  name="submissionPeriodId"
+                  rules={structuralRequired("submissionPeriodId") ? [{ required: true, message: t("Please select a submission period") }] : []}
+                >
+                  <Select
+                    showSearch
+                    allowClear
+                    placeholder={t("Select open submission period")}
+                    optionFilterProp="label"
+                    loading={isLoadingArchivePeriods}
+                    disabled={!archiveSemesterId || !canChangeSubmissionPeriod}
+                    onChange={handleSubmissionPeriodChange}
+                    options={archivePeriods.map((p) => ({
+                      value: p.id,
+                      label: p.closesAt
+                        ? t("{{name}} (closes {{date}})", { name: p.name, date: formatDate(p.closesAt, lang) })
+                        : p.name
+                    }))}
+                    notFoundContent={
+                      isLoadingArchivePeriods ? t("Loading...") : t("No open periods for this semester")
+                    }
+                  />
+                </Form.Item>
+              ) : renderAlternateField("submissionPeriodId")}
 
-                    <Divider style={{ margin: "8px 0" }} />
-                    {isAdminActor && showNative("authorIds") ? (
-                    <Form.Item
-                      label={t("Authors")}
-                      name="authorIds"
-                      extra={t("Search by student name or username. Not filled with the admin account.")}
-                      rules={structuralRequired("authorIds") ? [{ required: true, message: t("Please search and select at least one student author") }] : []}
-                    >
-                      <Select
-                        mode="multiple"
-                        showSearch
-                        allowClear
-                        disabled={isFormReadOnly}
-                        placeholder={t("Search by name or username")}
-                        filterOption={personOptionFilter}
-                        loading={isLoadingStudents}
-                        options={studentOptions}
-                        maxTagCount="responsive"
-                        onChange={handleAdminAuthorsChange}
-                        notFoundContent={isLoadingStudents ? t("Loading...") : t("No students found")}
-                      />
-                    </Form.Item>
-                    ) : isAdminActor ? renderAlternateField("authorIds") : null}
-                    <fieldset
-                      disabled={isFormReadOnly}
-                      style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}
-                    >
-                    {showNative("email") ? (
-                    <Form.Item label={t("Email")} name="email">
-                      <Input disabled placeholder="username@hcmut.edu.vn" />
-                    </Form.Item>
-                    ) : renderAlternateField("email")}
-                    {showNative("titleVi") ? (
-                    <Form.Item
-                      label={t("Thesis title (Vietnamese)")}
-                      name="titleVi"
-                      rules={structuralRequired("titleVi") ? [{ required: true, message: t("Vietnamese title is required") }] : []}
-                    >
-                      <Input placeholder={t("Tên luận văn / luận án (tiếng Việt)")} />
-                    </Form.Item>
-                    ) : renderAlternateField("titleVi")}
-                    {showNative("titleEn") ? (
-                    <Form.Item
-                      label={t("Thesis title (English)")}
-                      name="titleEn"
-                      rules={structuralRequired("titleEn") ? [{ required: true, message: t("English title is required") }] : []}
-                    >
-                      <Input placeholder={t("Thesis title in English")} />
-                    </Form.Item>
-                    ) : renderAlternateField("titleEn")}
-                    {showNative("thesisAdvisors") ? (
-                    <Form.Item
-                      label={t("Advisor(s)")}
-                      name="thesisAdvisors"
-                      rules={structuralRequired("thesisAdvisors") ? [{ required: true, message: t("Advisor(s) is required") }] : []}
-                    >
-                      <Input placeholder={t("e.g. Assoc. Prof. Nguyen Van A; Dr. Tran Van B")} />
-                    </Form.Item>
-                    ) : renderAlternateField("thesisAdvisors")}
-                    {showNative("major") ? (
-                    <Form.Item label={t("Major")} name="major" rules={structuralRequired("major") ? [{ required: true, message: t("Major is required") }] : []}>
-                      <Input placeholder={t("e.g. Computer Science")} />
-                    </Form.Item>
-                    ) : renderAlternateField("major")}
-                    {showNative("thesisYear") ? (
-                    <Form.Item label={t("Year")} name="thesisYear" rules={structuralRequired("thesisYear") ? [{ required: true, message: t("Year is required") }] : []}>
-                      <Select
-                        options={THESIS_YEAR_OPTIONS}
-                        placeholder={t("Graduation / submission year")}
-                        onChange={(year) => {
-                          const current = submissionForm.getFieldValue("dateIssued");
-                          if (!current || /^\d{4}$/.test(String(current))) {
-                            submissionForm.setFieldsValue({ dateIssued: year });
-                          }
-                        }}
-                      />
-                    </Form.Item>
-                    ) : renderAlternateField("thesisYear")}
-                    {!isAdminActor && showNative("authorIds") ? (
-                    <Form.Item
-                      label={t("Authors")}
-                      name="authorIds"
-                      rules={structuralRequired("authorIds") ? [{ required: true, message: t("Please select at least one author") }] : []}
-                    >
-                      <Select
-                        mode="multiple"
-                        showSearch
-                        allowClear
-                        placeholder={t("Search by name or username")}
-                        filterOption={personOptionFilter}
-                        loading={isLoadingStudents}
-                        options={studentOptions}
-                        maxTagCount="responsive"
-                        notFoundContent={isLoadingStudents ? t("Loading...") : t("No students found")}
-                      />
-                    </Form.Item>
-                    ) : !isAdminActor ? renderAlternateField("authorIds") : null}
-                    {showNative("reviewerIds") ? (
-                    <Form.Item
-                      label={t("Reviewers")}
-                      name="reviewerIds"
-                      rules={structuralRequired("reviewerIds") ? [{ required: true, message: t("Please select at least one reviewer") }] : []}
-                    >
-                      <Select
-                        mode="multiple"
-                        showSearch
-                        allowClear
-                        placeholder={t("Search by name or username")}
-                        filterOption={personOptionFilter}
-                        loading={isLoadingReviewers}
-                        options={reviewerOptions}
-                        maxTagCount="responsive"
-                        notFoundContent={isLoadingReviewers ? t("Loading...") : t("No reviewers found")}
-                      />
-                    </Form.Item>
-                    ) : renderAlternateField("reviewerIds")}
-                    {configurableFormFields.map((field) => {
-                      const label = fieldDisplayLabel(field, t);
-                      const rules = field.required
-                        ? [{ required: true, message: t("{{label}} is required", { label }) }]
-                        : [];
-                      let control;
-                      if (field.inputType === "textarea") {
-                        control = <TextArea rows={field.fieldKey === "abstract" ? 5 : 3} />;
-                      } else if (field.inputType === "select" || field.inputType === "year") {
-                        control = (
-                          <Select
-                            options={
-                              field.inputType === "year"
-                                ? THESIS_YEAR_OPTIONS
-                                : (field.options || []).map((o) => ({
-                                    value: o.value,
-                                    label: optionDisplayLabel(o, t)
-                                  }))
-                            }
-                            placeholder={label}
-                          />
-                        );
-                      } else {
-                        control = <Input placeholder={field.defaultValue || label} />;
-                      }
-                      return (
-                        <Form.Item
-                          key={field.id || field.fieldKey}
-                          label={label}
-                          name={field.fieldKey}
-                          rules={rules}
-                        >
-                          {control}
-                        </Form.Item>
-                      );
-                    })}
-                    {showNative("thesisFile") ? (
-                    <Form.Item
-                      label={t("Thesis PDF")}
-                      name="thesisFile"
-                      valuePropName="fileList"
-                      getValueFromEvent={(event) => event?.fileList || []}
-                      rules={[
-                        {
-                          required: !editingSubmissionId && structuralRequired("thesisFile"),
-                          message: t("Please upload thesis PDF")
+              <Divider style={{ margin: "8px 0" }} />
+              {isAdminActor && showNative("authorIds") ? (
+                <Form.Item
+                  label={t("Authors")}
+                  name="authorIds"
+                  extra={t("Search by student name or username. Not filled with the admin account.")}
+                  rules={structuralRequired("authorIds") ? [{ required: true, message: t("Please search and select at least one student author") }] : []}
+                >
+                  <Select
+                    mode="multiple"
+                    showSearch
+                    allowClear
+                    disabled={isFormReadOnly}
+                    placeholder={t("Search by name or username")}
+                    filterOption={personOptionFilter}
+                    loading={isLoadingStudents}
+                    options={studentOptions}
+                    maxTagCount="responsive"
+                    onChange={handleAdminAuthorsChange}
+                    notFoundContent={isLoadingStudents ? t("Loading...") : t("No students found")}
+                  />
+                </Form.Item>
+              ) : isAdminActor ? renderAlternateField("authorIds") : null}
+              <fieldset
+                disabled={isFormReadOnly}
+                style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}
+              >
+                {showNative("email") ? (
+                  <Form.Item label={t("Email")} name="email">
+                    <Input disabled placeholder="username@hcmut.edu.vn" />
+                  </Form.Item>
+                ) : renderAlternateField("email")}
+                {showNative("titleVi") ? (
+                  <Form.Item
+                    label={t("Thesis title (Vietnamese)")}
+                    name="titleVi"
+                    rules={structuralRequired("titleVi") ? [{ required: true, message: t("Vietnamese title is required") }] : []}
+                  >
+                    <Input placeholder={t("Tên luận văn / luận án (tiếng Việt)")} />
+                  </Form.Item>
+                ) : renderAlternateField("titleVi")}
+                {showNative("titleEn") ? (
+                  <Form.Item
+                    label={t("Thesis title (English)")}
+                    name="titleEn"
+                    rules={structuralRequired("titleEn") ? [{ required: true, message: t("English title is required") }] : []}
+                  >
+                    <Input placeholder={t("Thesis title in English")} />
+                  </Form.Item>
+                ) : renderAlternateField("titleEn")}
+                {showNative("thesisAdvisors") ? (
+                  <Form.Item
+                    label={t("Advisor(s)")}
+                    name="thesisAdvisors"
+                    rules={structuralRequired("thesisAdvisors") ? [{ required: true, message: t("Advisor(s) is required") }] : []}
+                  >
+                    <Input placeholder={t("e.g. Assoc. Prof. Nguyen Van A; Dr. Tran Van B")} />
+                  </Form.Item>
+                ) : renderAlternateField("thesisAdvisors")}
+                {showNative("major") ? (
+                  <Form.Item label={t("Major")} name="major" rules={structuralRequired("major") ? [{ required: true, message: t("Major is required") }] : []}>
+                    <Input placeholder={t("e.g. Computer Science")} />
+                  </Form.Item>
+                ) : renderAlternateField("major")}
+                {showNative("thesisYear") ? (
+                  <Form.Item label={t("Year")} name="thesisYear" rules={structuralRequired("thesisYear") ? [{ required: true, message: t("Year is required") }] : []}>
+                    <Select
+                      options={THESIS_YEAR_OPTIONS}
+                      placeholder={t("Graduation / submission year")}
+                      onChange={(year) => {
+                        const current = submissionForm.getFieldValue("dateIssued");
+                        if (!current || /^\d{4}$/.test(String(current))) {
+                          submissionForm.setFieldsValue({ dateIssued: year });
                         }
-                      ]}
-                      extra={
-                        editingSubmissionId
-                          ? t("Current PDF is shown below. Upload a new file only if you want to replace it.")
-                          : undefined
-                      }
-                    >
-                      <Upload.Dragger
-                        accept=".pdf,application/pdf"
-                        beforeUpload={(file) =>
-                          validateThesisPdf(file, t, thesisMaxFileSizeMb) ? false : Upload.LIST_IGNORE
+                      }}
+                    />
+                  </Form.Item>
+                ) : renderAlternateField("thesisYear")}
+                {!isAdminActor && showNative("authorIds") ? (
+                  <Form.Item
+                    label={t("Authors")}
+                    name="authorIds"
+                    rules={structuralRequired("authorIds") ? [{ required: true, message: t("Please select at least one author") }] : []}
+                  >
+                    <Select
+                      mode="multiple"
+                      showSearch
+                      allowClear
+                      placeholder={t("Search by name or username")}
+                      filterOption={personOptionFilter}
+                      loading={isLoadingStudents}
+                      options={studentOptions}
+                      maxTagCount="responsive"
+                      notFoundContent={isLoadingStudents ? t("Loading...") : t("No students found")}
+                    />
+                  </Form.Item>
+                ) : !isAdminActor ? renderAlternateField("authorIds") : null}
+                {showNative("reviewerIds") ? (
+                  <Form.Item
+                    label={t("Reviewers")}
+                    name="reviewerIds"
+                    rules={structuralRequired("reviewerIds") ? [{ required: true, message: t("Please select at least one reviewer") }] : []}
+                  >
+                    <Select
+                      mode="multiple"
+                      showSearch
+                      allowClear
+                      placeholder={t("Search by name or username")}
+                      filterOption={personOptionFilter}
+                      loading={isLoadingReviewers}
+                      options={reviewerOptions}
+                      maxTagCount="responsive"
+                      notFoundContent={isLoadingReviewers ? t("Loading...") : t("No reviewers found")}
+                    />
+                  </Form.Item>
+                ) : renderAlternateField("reviewerIds")}
+                {configurableFormFields.map((field) => {
+                  const label = fieldDisplayLabel(field, t);
+                  const rules = field.required
+                    ? [{ required: true, message: t("{{label}} is required", { label }) }]
+                    : [];
+                  let control;
+                  if (field.inputType === "textarea") {
+                    control = <TextArea rows={field.fieldKey === "abstract" ? 5 : 3} />;
+                  } else if (field.inputType === "select" || field.inputType === "year") {
+                    control = (
+                      <Select
+                        options={
+                          field.inputType === "year"
+                            ? THESIS_YEAR_OPTIONS
+                            : (field.options || []).map((o) => ({
+                              value: o.value,
+                              label: optionDisplayLabel(o, t)
+                            }))
                         }
-                        maxCount={1}
-                        onPreview={(file) => {
-                          if (file?.existingFileId && editingSubmissionId) {
-                            void openProtectedSubmissionFile(editingSubmissionId, file.existingFileId);
-                          }
-                        }}
+                        placeholder={label}
+                      />
+                    );
+                  } else {
+                    control = <Input placeholder={field.defaultValue || label} />;
+                  }
+                  return (
+                    <Form.Item
+                      key={field.id || field.fieldKey}
+                      label={label}
+                      name={field.fieldKey}
+                      rules={rules}
+                    >
+                      {control}
+                    </Form.Item>
+                  );
+                })}
+                {showNative("thesisFile") ? (
+                  <Form.Item
+                    label={t("Thesis PDF")}
+                    name="thesisFile"
+                    valuePropName="fileList"
+                    getValueFromEvent={(event) => event?.fileList || []}
+                    rules={[
+                      {
+                        required: !editingSubmissionId && structuralRequired("thesisFile"),
+                        message: t("Please upload thesis PDF")
+                      }
+                    ]}
+                    extra={
+                      editingSubmissionId
+                        ? t("Current PDF is shown below. Upload a new file only if you want to replace it.")
+                        : undefined
+                    }
+                  >
+                    <Upload.Dragger
+                      accept=".pdf,application/pdf"
+                      beforeUpload={(file) =>
+                        validateThesisPdf(file, t, thesisMaxFileSizeMb) ? false : Upload.LIST_IGNORE
+                      }
+                      maxCount={1}
+                      onPreview={(file) => {
+                        if (file?.existingFileId && editingSubmissionId) {
+                          void openProtectedSubmissionFile(editingSubmissionId, file.existingFileId);
+                        }
+                      }}
+                    >
+                      <p className="ant-upload-drag-icon">
+                        <InboxOutlined />
+                      </p>
+                      <p className="ant-upload-text">{t("Click or drag PDF thesis file here (max {{size}} MB)", { size: thesisMaxFileSizeMb })}</p>
+                    </Upload.Dragger>
+                  </Form.Item>
+                ) : renderAlternateField("thesisFile")}
+
+                <Space wrap>
+                  {!isFormReadOnly ? (
+                    <>
+                      <Button
+                        onClick={() => void handleSaveDraft(submissionForm.getFieldsValue())}
+                        loading={isSavingDraft}
+                        disabled={
+                          (showNative("submissionPeriodId") &&
+                            structuralRequired("submissionPeriodId") &&
+                            !periodSelected &&
+                            !editingSubmissionId) ||
+                          !canSaveCurrentDraft ||
+                          isFormReadOnly
+                        }
+                      >{t("Save draft")}</Button>
+                      <Button
+                        type="primary"
+                        onClick={() => submissionForm.validateFields().then(handleSubmitThesis).catch(() => { })}
+                        loading={isSubmittingSubmission}
+                        disabled={(!periodSelected && !editingSubmissionId) || !canSubmitCurrentThesis}
                       >
-                        <p className="ant-upload-drag-icon">
-                          <InboxOutlined />
-                        </p>
-                        <p className="ant-upload-text">{t("Click or drag PDF thesis file here (max {{size}} MB)", { size: thesisMaxFileSizeMb })}</p>
-                      </Upload.Dragger>
-                    </Form.Item>
-                    ) : renderAlternateField("thesisFile")}
-
-                    <Space wrap>
-                      {!isFormReadOnly ? (
-                        <>
-                          <Button
-                            onClick={() => void handleSaveDraft(submissionForm.getFieldsValue())}
-                            loading={isSavingDraft}
-                            disabled={
-                              (showNative("submissionPeriodId") &&
-                                structuralRequired("submissionPeriodId") &&
-                                !periodSelected &&
-                                !editingSubmissionId) ||
-                              !canSaveCurrentDraft ||
-                              isFormReadOnly
-                            }
-                          >{t("Save draft")}</Button>
-                          <Button
-                            type="primary"
-                            onClick={() => submissionForm.validateFields().then(handleSubmitThesis).catch(() => {})}
-                            loading={isSubmittingSubmission}
-                            disabled={(!periodSelected && !editingSubmissionId) || !canSubmitCurrentThesis}
-                          >
-                            {editingSubmissionStatus === "rejected" ||
-                            editingSubmissionStatus === "reject" ||
-                            editingSubmissionStatus === "approved" ||
-                            editingSubmissionStatus === "reviewing"
-                              ? t("Submit again")
-                              : t("Submit thesis")}
-                          </Button>
-                          {editingSubmissionId && editingSubmissionCapabilities.canDelete ? (
-                            <Button
-                              danger
-                              loading={isDeletingSubmission}
-                              onClick={() =>
-                                editingSubmissionRecord && promptDeleteSubmission(editingSubmissionRecord)
-                              }
-                            >{t("Delete")}</Button>
-                          ) : null}
-                        </>
+                        {editingSubmissionStatus === "rejected" ||
+                          editingSubmissionStatus === "reject" ||
+                          editingSubmissionStatus === "approved" ||
+                          editingSubmissionStatus === "reviewing"
+                          ? t("Submit again")
+                          : t("Submit thesis")}
+                      </Button>
+                      {editingSubmissionId && editingSubmissionCapabilities.canDelete ? (
+                        <Button
+                          danger
+                          loading={isDeletingSubmission}
+                          onClick={() =>
+                            editingSubmissionRecord && promptDeleteSubmission(editingSubmissionRecord)
+                          }
+                        >{t("Delete")}</Button>
                       ) : null}
-                      {editingSubmissionId ? (
-                        <Button onClick={resetSubmissionForm}>{isFormReadOnly ? t("Close") : t("Cancel edit")}</Button>
-                      ) : null}
-                    </Space>
-                    </fieldset>
-                  </Form>
                     </>
-                  )}
-                </>
+                  ) : null}
+                  {editingSubmissionId ? (
+                    <Button onClick={resetSubmissionForm}>{isFormReadOnly ? t("Close") : t("Cancel edit")}</Button>
+                  ) : null}
+                </Space>
+              </fieldset>
+            </Form>
+          </>
+        )}
+      </>
     );
   };
 
@@ -3487,21 +3487,21 @@ function App() {
           </Button>
           <LanguageSwitch />
           {auth?.user ? (
-          <Space size={12} align="center">
-            <div style={{ textAlign: "right", lineHeight: 1.25 }}>
-              <Text style={{ color: "#ffffff", display: "block", fontWeight: 600 }}>
-                {auth.user.displayName || auth.user.username}
-              </Text>
-              <Text style={{ color: "#d7e8ff", display: "block", fontSize: 12 }}>@{auth.user.username}</Text>
-            </div>
-            <Button
-              onClick={() => {
-                passwordForm.resetFields();
-                setPasswordModalOpen(true);
-              }}
-            >{t("Change password")}</Button>
-            <Button danger onClick={handleLogout}>{t("Log out")}</Button>
-          </Space>
+            <Space size={12} align="center">
+              <div style={{ textAlign: "right", lineHeight: 1.25 }}>
+                <Text style={{ color: "#ffffff", display: "block", fontWeight: 600 }}>
+                  {auth.user.displayName || auth.user.username}
+                </Text>
+                <Text style={{ color: "#d7e8ff", display: "block", fontSize: 12 }}>@{auth.user.username}</Text>
+              </div>
+              <Button
+                onClick={() => {
+                  passwordForm.resetFields();
+                  setPasswordModalOpen(true);
+                }}
+              >{t("Change password")}</Button>
+              <Button danger onClick={handleLogout}>{t("Log out")}</Button>
+            </Space>
           ) : null}
         </Space>
       </Header>
@@ -3601,68 +3601,68 @@ function App() {
                 </>
               )}
             </Space>
-          
-          <Modal
-            title="Đăng ký tài khoản sinh viên mới"
-            open={showRegister}
-            onCancel={() => {
-              setShowRegister(false);
-              registerForm.resetFields();
-            }}
-            footer={null}
-            destroyOnClose
-          >
-            <Form
-              form={registerForm}
-              layout="vertical"
-              onFinish={handleRegister}
-              autoComplete="off"
+
+            <Modal
+              title="Đăng ký tài khoản sinh viên mới"
+              open={showRegister}
+              onCancel={() => {
+                setShowRegister(false);
+                registerForm.resetFields();
+              }}
+              footer={null}
+              destroyOnClose
             >
-              <Form.Item
-                label="Tên đăng nhập (Username / MSSV)"
-                name="username"
-                rules={[
-                  { required: true, message: "Vui lòng nhập tên đăng nhập" },
-                  { min: 2, message: "Tối thiểu 2 ký tự" }
-                ]}
+              <Form
+                form={registerForm}
+                layout="vertical"
+                onFinish={handleRegister}
+                autoComplete="off"
               >
-                <Input placeholder="Ví dụ: 2110001 hoặc nguyenvana" />
-              </Form.Item>
+                <Form.Item
+                  label="Tên đăng nhập (Username / MSSV)"
+                  name="username"
+                  rules={[
+                    { required: true, message: "Vui lòng nhập tên đăng nhập" },
+                    { min: 2, message: "Tối thiểu 2 ký tự" }
+                  ]}
+                >
+                  <Input placeholder="Ví dụ: 2110001 hoặc nguyenvana" />
+                </Form.Item>
 
-              <Form.Item
-                label="Họ và tên sinh viên"
-                name="displayName"
-                rules={[
-                  { required: true, message: "Vui lòng nhập họ và tên" },
-                  { min: 2, message: "Tối thiểu 2 ký tự" }
-                ]}
-              >
-                <Input placeholder="Ví dụ: Nguyễn Văn An" />
-              </Form.Item>
+                <Form.Item
+                  label="Họ và tên sinh viên"
+                  name="displayName"
+                  rules={[
+                    { required: true, message: "Vui lòng nhập họ và tên" },
+                    { min: 2, message: "Tối thiểu 2 ký tự" }
+                  ]}
+                >
+                  <Input placeholder="Ví dụ: Nguyễn Văn An" />
+                </Form.Item>
 
-              <Form.Item
-                label="Mật khẩu"
-                name="password"
-                rules={[
-                  { required: true, message: "Vui lòng nhập mật khẩu" },
-                  { min: 6, message: "Mật khẩu tối thiểu 6 ký tự" }
-                ]}
-              >
-                <Input.Password placeholder="Nhập mật khẩu (tối thiểu 6 ký tự)" />
-              </Form.Item>
+                <Form.Item
+                  label="Mật khẩu"
+                  name="password"
+                  rules={[
+                    { required: true, message: "Vui lòng nhập mật khẩu" },
+                    { min: 6, message: "Mật khẩu tối thiểu 6 ký tự" }
+                  ]}
+                >
+                  <Input.Password placeholder="Nhập mật khẩu (tối thiểu 6 ký tự)" />
+                </Form.Item>
 
-              <Form.Item style={{ marginBottom: 0, marginTop: 16 }}>
-                <Space style={{ width: "100%", justifyContent: "flex-end" }}>
-                  <Button onClick={() => setShowRegister(false)}>
-                    Hủy
-                  </Button>
-                  <Button type="primary" htmlType="submit" loading={registerLoading}>
-                    Đăng ký tài khoản
-                  </Button>
-                </Space>
-              </Form.Item>
-            </Form>
-          </Modal>
+                <Form.Item style={{ marginBottom: 0, marginTop: 16 }}>
+                  <Space style={{ width: "100%", justifyContent: "flex-end" }}>
+                    <Button onClick={() => setShowRegister(false)}>
+                      Hủy
+                    </Button>
+                    <Button type="primary" htmlType="submit" loading={registerLoading}>
+                      Đăng ký tài khoản
+                    </Button>
+                  </Space>
+                </Form.Item>
+              </Form>
+            </Modal>
           </Card>
         ) : (
           <Card
@@ -3748,52 +3748,52 @@ function App() {
                               key: "list",
                               label: t("All submissions"),
                               children: (
-                        <>
-                          <Paragraph type="secondary">
-                            {t(
-                              "Click a row to view details. Edit and delete are in the detail view, including archived items linked to DSpace."
-                            )}
-                          </Paragraph>
-                          <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 8 }}>
-                            <Title level={5} style={{ margin: 0 }}>{t("All submissions")}</Title>
-                            <Space>
-                              <Button type="primary" onClick={openAdminCreateSubmission}>{t("Create submission")}</Button>
-                              <Button icon={<DownloadOutlined />} onClick={exportAllSubmissions}>{t("Export submissions")}</Button>
-                              <Button onClick={() => void loadStaffSubmissions()} loading={isLoadingSubmissions}>{t("Refresh")}</Button>
-                            </Space>
-                          </Space>
-                          {renderSearchArchiveFilters({
-                            search: staffSearch,
-                            onSearch: setStaffSearch,
-                            semester: staffSemesterFilter,
-                            onSemester: setStaffSemesterFilter,
-                            period: staffPeriodFilter,
-                            onPeriod: setStaffPeriodFilter,
-                            items: staffSubmissions
-                          })}
-                          <Table
-                            rowKey="id"
-                            dataSource={staffFilteredSubmissions}
-                            columns={adminSubmissionColumns}
-                            loading={isLoadingSubmissions}
-                            pagination={{ pageSize: 8 }}
-                            scroll={{ x: 1400 }}
-                            onRow={(record) => ({
-                              onClick: () => setStaffDetailRecord(record),
-                              style: { cursor: "pointer" }
-                            })}
-                          />
-                          <Modal
-                            title={editingSubmissionId ? t("Edit submission") : t("Create submission")}
-                            open={adminSubmissionModalOpen}
-                            onCancel={resetSubmissionForm}
-                            footer={null}
-                            width={880}
-                            destroyOnClose
-                          >
-                            {renderThesisEntryWorkspace()}
-                          </Modal>
-                        </>
+                                <>
+                                  <Paragraph type="secondary">
+                                    {t(
+                                      "Click a row to view details. Edit and delete are in the detail view, including archived items linked to DSpace."
+                                    )}
+                                  </Paragraph>
+                                  <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 8 }}>
+                                    <Title level={5} style={{ margin: 0 }}>{t("All submissions")}</Title>
+                                    <Space>
+                                      <Button type="primary" onClick={openAdminCreateSubmission}>{t("Create submission")}</Button>
+                                      <Button icon={<DownloadOutlined />} onClick={exportAllSubmissions}>{t("Export submissions")}</Button>
+                                      <Button onClick={() => void loadStaffSubmissions()} loading={isLoadingSubmissions}>{t("Refresh")}</Button>
+                                    </Space>
+                                  </Space>
+                                  {renderSearchArchiveFilters({
+                                    search: staffSearch,
+                                    onSearch: setStaffSearch,
+                                    semester: staffSemesterFilter,
+                                    onSemester: setStaffSemesterFilter,
+                                    period: staffPeriodFilter,
+                                    onPeriod: setStaffPeriodFilter,
+                                    items: staffSubmissions
+                                  })}
+                                  <Table
+                                    rowKey="id"
+                                    dataSource={staffFilteredSubmissions}
+                                    columns={adminSubmissionColumns}
+                                    loading={isLoadingSubmissions}
+                                    pagination={{ pageSize: 8 }}
+                                    scroll={{ x: 1400 }}
+                                    onRow={(record) => ({
+                                      onClick: () => setStaffDetailRecord(record),
+                                      style: { cursor: "pointer" }
+                                    })}
+                                  />
+                                  <Modal
+                                    title={editingSubmissionId ? t("Edit submission") : t("Create submission")}
+                                    open={adminSubmissionModalOpen}
+                                    onCancel={resetSubmissionForm}
+                                    footer={null}
+                                    width={880}
+                                    destroyOnClose
+                                  >
+                                    {renderThesisEntryWorkspace()}
+                                  </Modal>
+                                </>
                               )
                             },
                             {
@@ -3820,105 +3820,105 @@ function App() {
                       key: "workflow",
                       label: auth.user.role === "director" ? t("Approval workflow") : t("Intake & submissions"),
                       children: (
-                <>
-                  <Paragraph type="secondary">
-                    {t("Workflow:")} <Tag color="gold">{t("Reviewing")}</Tag> → <Tag color="green">{t("Approved")}</Tag> →{" "}
-                    <Tag color="purple">{t("Archived")}</Tag> {t("or")} <Tag color="red">{t("Rejected")}</Tag>.
-                  </Paragraph>
-                  {renderSearchArchiveFilters({
-                    search: staffSearch,
-                    onSearch: setStaffSearch,
-                    semester: staffSemesterFilter,
-                    onSemester: setStaffSemesterFilter,
-                    period: staffPeriodFilter,
-                    onPeriod: setStaffPeriodFilter,
-                    items: staffFilterSource
-                  })}
-                  {auth.user.role === "library_staff" && (
-                    <>
-                      <Divider style={{ margin: "8px 0" }} />
-                      <Space style={{ width: "100%", justifyContent: "space-between" }}>
-                        <Title level={5} style={{ margin: 0 }}>{t("Library intake queue")}</Title>
-                        <Button onClick={() => loadLibraryQueue()} loading={isLoadingLibraryQueue}>{t("Refresh")}</Button>
-                      </Space>
-                      <Table
-                        rowKey="id"
-                        dataSource={libraryFilteredQueue}
-                        columns={buildStageQueueColumns(
-                          libraryActionLoadingId,
-                          (id) => submitLibraryAction(id, "approve"),
-                          openLibraryRejectModal,
-                          t("Approve")
-                        )}
-                        loading={isLoadingLibraryQueue}
-                        pagination={{ pageSize: 5 }}
-                        scroll={{ x: 1250 }}
-                      />
-                    </>
-                  )}
-                  {auth.user.role === "director" && (
-                    <>
-                      <Divider style={{ margin: "8px 0" }} />
-                      <Space style={{ width: "100%", justifyContent: "space-between" }}>
-                        <div>
-                          <Title level={5} style={{ margin: 0 }}>{t("Archive approved submissions")}</Title>
-                          <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-                            {t(
-                              "Archive commits in Portal then publishes the thesis item (+ PDF when available) into the DSpace collection of the submission period (fallback: semester collection)."
-                            )}
+                        <>
+                          <Paragraph type="secondary">
+                            {t("Workflow:")} <Tag color="gold">{t("Reviewing")}</Tag> → <Tag color="green">{t("Approved")}</Tag> →{" "}
+                            <Tag color="purple">{t("Archived")}</Tag> {t("or")} <Tag color="red">{t("Rejected")}</Tag>.
                           </Paragraph>
-                        </div>
-                        <Button onClick={() => loadDirectorQueue()} loading={isLoadingDirectorQueue}>{t("Refresh")}</Button>
-                      </Space>
-                      <Table
-                        rowKey="id"
-                        dataSource={directorFilteredQueue}
-                        columns={buildDirectorArchiveColumns(
-                          directorActionLoadingId,
-                          (id) => submitDirectorArchive(id),
-                          (id) => submitStageAction("director-action", id, "approve", undefined, t("Approved")),
-                          (id) => openDirectorRejectModal(id)
-                        )}
-                        loading={isLoadingDirectorQueue}
-                        pagination={{ pageSize: 5 }}
-                        scroll={{ x: 1250 }}
-                      />
-                    </>
-                  )}
-                  <Divider style={{ margin: "8px 0" }} />
-                  <Space style={{ width: "100%", justifyContent: "space-between" }}>
-                    <Title level={5} style={{ margin: 0 }}>{t("All submissions")}</Title>
-                    <Space>
-                      <Button icon={<DownloadOutlined />} onClick={exportAllSubmissions}>{t("Export submissions")}</Button>
-                      <Button
-                        onClick={() => {
-                          void loadStaffSubmissions();
-                          if (auth.user.role === "library_staff") {
-                            void loadLibraryQueue();
-                          }
-                          if (auth.user.role === "director") {
-                            void loadDirectorQueue();
-                          }
-                        }}
-                        loading={
-                          isLoadingSubmissions || isLoadingLibraryQueue || isLoadingDirectorQueue
-                        }
-                      >{t("Refresh")}</Button>
-                    </Space>
-                  </Space>
-                  <Table
-                    rowKey="id"
-                    dataSource={staffFilteredSubmissions}
-                    columns={adminSubmissionColumns}
-                    loading={isLoadingSubmissions}
-                    pagination={{ pageSize: 8 }}
-                    scroll={{ x: 1400 }}
-                    onRow={(record) => ({
-                      onClick: () => setStaffDetailRecord(record),
-                      style: { cursor: "pointer" }
-                    })}
-                  />
-                </>
+                          {renderSearchArchiveFilters({
+                            search: staffSearch,
+                            onSearch: setStaffSearch,
+                            semester: staffSemesterFilter,
+                            onSemester: setStaffSemesterFilter,
+                            period: staffPeriodFilter,
+                            onPeriod: setStaffPeriodFilter,
+                            items: staffFilterSource
+                          })}
+                          {auth.user.role === "library_staff" && (
+                            <>
+                              <Divider style={{ margin: "8px 0" }} />
+                              <Space style={{ width: "100%", justifyContent: "space-between" }}>
+                                <Title level={5} style={{ margin: 0 }}>{t("Library intake queue")}</Title>
+                                <Button onClick={() => loadLibraryQueue()} loading={isLoadingLibraryQueue}>{t("Refresh")}</Button>
+                              </Space>
+                              <Table
+                                rowKey="id"
+                                dataSource={libraryFilteredQueue}
+                                columns={buildStageQueueColumns(
+                                  libraryActionLoadingId,
+                                  (id) => submitLibraryAction(id, "approve"),
+                                  openLibraryRejectModal,
+                                  t("Approve")
+                                )}
+                                loading={isLoadingLibraryQueue}
+                                pagination={{ pageSize: 5 }}
+                                scroll={{ x: 1250 }}
+                              />
+                            </>
+                          )}
+                          {auth.user.role === "director" && (
+                            <>
+                              <Divider style={{ margin: "8px 0" }} />
+                              <Space style={{ width: "100%", justifyContent: "space-between" }}>
+                                <div>
+                                  <Title level={5} style={{ margin: 0 }}>{t("Archive approved submissions")}</Title>
+                                  <Paragraph type="secondary" style={{ marginBottom: 0 }}>
+                                    {t(
+                                      "Archive commits in Portal then publishes the thesis item (+ PDF when available) into the DSpace collection of the submission period (fallback: semester collection)."
+                                    )}
+                                  </Paragraph>
+                                </div>
+                                <Button onClick={() => loadDirectorQueue()} loading={isLoadingDirectorQueue}>{t("Refresh")}</Button>
+                              </Space>
+                              <Table
+                                rowKey="id"
+                                dataSource={directorFilteredQueue}
+                                columns={buildDirectorArchiveColumns(
+                                  directorActionLoadingId,
+                                  (id) => submitDirectorArchive(id),
+                                  (id) => submitStageAction("director-action", id, "approve", undefined, t("Approved")),
+                                  (id) => openDirectorRejectModal(id)
+                                )}
+                                loading={isLoadingDirectorQueue}
+                                pagination={{ pageSize: 5 }}
+                                scroll={{ x: 1250 }}
+                              />
+                            </>
+                          )}
+                          <Divider style={{ margin: "8px 0" }} />
+                          <Space style={{ width: "100%", justifyContent: "space-between" }}>
+                            <Title level={5} style={{ margin: 0 }}>{t("All submissions")}</Title>
+                            <Space>
+                              <Button icon={<DownloadOutlined />} onClick={exportAllSubmissions}>{t("Export submissions")}</Button>
+                              <Button
+                                onClick={() => {
+                                  void loadStaffSubmissions();
+                                  if (auth.user.role === "library_staff") {
+                                    void loadLibraryQueue();
+                                  }
+                                  if (auth.user.role === "director") {
+                                    void loadDirectorQueue();
+                                  }
+                                }}
+                                loading={
+                                  isLoadingSubmissions || isLoadingLibraryQueue || isLoadingDirectorQueue
+                                }
+                              >{t("Refresh")}</Button>
+                            </Space>
+                          </Space>
+                          <Table
+                            rowKey="id"
+                            dataSource={staffFilteredSubmissions}
+                            columns={adminSubmissionColumns}
+                            loading={isLoadingSubmissions}
+                            pagination={{ pageSize: 8 }}
+                            scroll={{ x: 1400 }}
+                            onRow={(record) => ({
+                              onClick: () => setStaffDetailRecord(record),
+                              style: { cursor: "pointer" }
+                            })}
+                          />
+                        </>
                       )
                     },
                     {
@@ -3945,8 +3945,8 @@ function App() {
         title={
           studentDetailRecord
             ? t("Thesis detail: {{title}}", {
-                title: studentDetailRecord.title_en || studentDetailRecord.title
-              })
+              title: studentDetailRecord.title_en || studentDetailRecord.title
+            })
             : t("Thesis detail")
         }
         open={Boolean(studentDetailRecord)}
@@ -3954,49 +3954,49 @@ function App() {
         footer={
           studentDetailRecord
             ? (() => {
-                const caps = getStudentSubmissionCapabilities(
-                  studentDetailRecord,
-                  auth?.user?.id,
-                  studentSubmissions
-                );
-                const actions = [];
-                if (caps.canEdit) {
-                  actions.push(
-                    <Button
-                      key="edit"
-                      onClick={() => {
-                        const record = studentDetailRecord;
-                        setStudentDetailRecord(null);
-                        void loadSubmissionIntoForm(record);
-                      }}
-                    >{t("Edit")}</Button>
-                  );
-                }
-                if (caps.canSubmit && studentDetailRecord.status === "draft") {
-                  actions.push(
-                    <Button
-                      key="submit"
-                      type="primary"
-                      loading={isSubmittingSubmission}
-                      onClick={() => void handleSubmitDraftFromDetail(studentDetailRecord)}
-                    >{t("Submit")}</Button>
-                  );
-                }
-                if (caps.canDelete) {
-                  actions.push(
-                    <Button
-                      key="delete"
-                      danger
-                      loading={isDeletingSubmission}
-                      onClick={() => promptDeleteSubmission(studentDetailRecord)}
-                    >{t("Delete")}</Button>
-                  );
-                }
+              const caps = getStudentSubmissionCapabilities(
+                studentDetailRecord,
+                auth?.user?.id,
+                studentSubmissions
+              );
+              const actions = [];
+              if (caps.canEdit) {
                 actions.push(
-                  <Button key="close" onClick={() => setStudentDetailRecord(null)}>{t("Close")}</Button>
+                  <Button
+                    key="edit"
+                    onClick={() => {
+                      const record = studentDetailRecord;
+                      setStudentDetailRecord(null);
+                      void loadSubmissionIntoForm(record);
+                    }}
+                  >{t("Edit")}</Button>
                 );
-                return actions;
-              })()
+              }
+              if (caps.canSubmit && studentDetailRecord.status === "draft") {
+                actions.push(
+                  <Button
+                    key="submit"
+                    type="primary"
+                    loading={isSubmittingSubmission}
+                    onClick={() => void handleSubmitDraftFromDetail(studentDetailRecord)}
+                  >{t("Submit")}</Button>
+                );
+              }
+              if (caps.canDelete) {
+                actions.push(
+                  <Button
+                    key="delete"
+                    danger
+                    loading={isDeletingSubmission}
+                    onClick={() => promptDeleteSubmission(studentDetailRecord)}
+                  >{t("Delete")}</Button>
+                );
+              }
+              actions.push(
+                <Button key="close" onClick={() => setStudentDetailRecord(null)}>{t("Close")}</Button>
+              );
+              return actions;
+            })()
             : null
         }
         width={820}
