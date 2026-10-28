@@ -3591,11 +3591,78 @@ function App() {
                     >
                       <Input.Password placeholder="******" />
                     </Form.Item>
-                    <Button type="primary" htmlType="submit" loading={isLoggingIn}>{t("Login")}</Button>
+                    <Space style={{ width: "100%", justifyContent: "space-between" }}>
+                      <Button type="primary" htmlType="submit" loading={isLoggingIn}>{t("Login")}</Button>
+                      <Button type="default" onClick={() => setShowRegister(true)}>
+                        {t("Tạo tài khoản mới")}
+                      </Button>
+                    </Space>
                   </Form>
                 </>
               )}
             </Space>
+          
+          <Modal
+            title="Đăng ký tài khoản sinh viên mới"
+            open={showRegister}
+            onCancel={() => {
+              setShowRegister(false);
+              registerForm.resetFields();
+            }}
+            footer={null}
+            destroyOnClose
+          >
+            <Form
+              form={registerForm}
+              layout="vertical"
+              onFinish={handleRegister}
+              autoComplete="off"
+            >
+              <Form.Item
+                label="Tên đăng nhập (Username / MSSV)"
+                name="username"
+                rules={[
+                  { required: true, message: "Vui lòng nhập tên đăng nhập" },
+                  { min: 2, message: "Tối thiểu 2 ký tự" }
+                ]}
+              >
+                <Input placeholder="Ví dụ: 2110001 hoặc nguyenvana" />
+              </Form.Item>
+
+              <Form.Item
+                label="Họ và tên sinh viên"
+                name="displayName"
+                rules={[
+                  { required: true, message: "Vui lòng nhập họ và tên" },
+                  { min: 2, message: "Tối thiểu 2 ký tự" }
+                ]}
+              >
+                <Input placeholder="Ví dụ: Nguyễn Văn An" />
+              </Form.Item>
+
+              <Form.Item
+                label="Mật khẩu"
+                name="password"
+                rules={[
+                  { required: true, message: "Vui lòng nhập mật khẩu" },
+                  { min: 6, message: "Mật khẩu tối thiểu 6 ký tự" }
+                ]}
+              >
+                <Input.Password placeholder="Nhập mật khẩu (tối thiểu 6 ký tự)" />
+              </Form.Item>
+
+              <Form.Item style={{ marginBottom: 0, marginTop: 16 }}>
+                <Space style={{ width: "100%", justifyContent: "flex-end" }}>
+                  <Button onClick={() => setShowRegister(false)}>
+                    Hủy
+                  </Button>
+                  <Button type="primary" htmlType="submit" loading={registerLoading}>
+                    Đăng ký tài khoản
+                  </Button>
+                </Space>
+              </Form.Item>
+            </Form>
+          </Modal>
           </Card>
         ) : (
           <Card
