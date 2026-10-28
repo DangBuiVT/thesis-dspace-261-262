@@ -1,3 +1,5 @@
+﻿import { Readable } from 'node:stream';
+import { PdfStampingService, SignatureStyleType } from '../reviews/pdf-stamping.service';
 import {
   BadRequestException,
   ForbiddenException,
@@ -69,6 +71,7 @@ export class SubmissionsService {
     private readonly workflowMail: WorkflowMailService,
     private readonly workflow: WorkflowService,
     private readonly groups: GroupsService,
+    private readonly pdfStampingService: PdfStampingService,
   ) {}
 
   private isAdminActor(actor: JwtPayload): boolean {
@@ -1901,6 +1904,7 @@ export class SubmissionsService {
     user: JwtPayload,
     submissionId: string,
     fileId: string,
+    style?: string,
   ) {
     const result = await this.db.query<{
       file_name: string;
@@ -1972,6 +1976,38 @@ export class SubmissionsService {
     }
 
     const contentType = this.contentTypeForFileName(row.file_name);
+
+    if (contentType === "application/pdf") {
+      const signatureEvent = await this.db.query<{ payload: any }>(
+        `SELECT payload FROM submission_events WHERE submission_id = $1::uuid AND event_type = 'digital_signature_signed' ORDER BY created_at DESC LIMIT 1`,
+        [submissionId]
+      );
+
+      const isSigned = Boolean(signatureEvent.rowCount && signatureEvent.rowCount > 0);
+      const requestedStyle = (style as SignatureStyleType) || 
+        (signatureEvent.rows[0]?.payload?.signature_style as SignatureStyleType) || 
+        "margin_strips";
+
+      if (isSigned || style) {
+        try {
+          const certSerial = signatureEvent.rows[0]?.payload?.certificate_serial;
+          const stampedBytes = await this.pdfStampingService.stampPdfFile(
+            row.file_url,
+            requestedStyle,
+            { serial: certSerial }
+          );
+          const stampedStream = Readable.from(Buffer.from(stampedBytes));
+          return {
+            stream: stampedStream,
+            contentType,
+            fileName: isSigned ? `[SIGNED]_${row.file_name}` : row.file_name,
+          };
+        } catch (e) {
+          // fallback
+        }
+      }
+    }
+
     const stream = createReadStream(row.file_url);
 
     return {

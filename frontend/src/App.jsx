@@ -658,6 +658,7 @@ function App() {
   const tr = (value) => translateApiMessage(value, t);
   const [loginForm] = Form.useForm();
   const [showRegister, setShowRegister] = useState(false);
+  const [previewStyle, setPreviewStyle] = useState('margin_strips');
   const [registerLoading, setRegisterLoading] = useState(false);
   const [registerForm] = Form.useForm();
   const [passwordForm] = Form.useForm();
