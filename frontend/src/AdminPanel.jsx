@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import { SearchOutlined, DownloadOutlined, UploadOutlined } from "@ant-design/icons";
 import LibraryArchivePanel from "./LibraryArchivePanel.jsx";
 import { translateApiMessage } from "./i18n/api";
@@ -146,6 +146,9 @@ export default function AdminPanel({
 }) {
   const { t, lang } = useI18n();
   const tr = (value) => translateApiMessage(value, t);
+  const [signatureStyle, setSignatureStyle] = useState(() => {
+    return localStorage.getItem("bklib_signature_style") || "margin_strips";
+  });
   const [activeTab, setActiveTab] = useState("users");
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
