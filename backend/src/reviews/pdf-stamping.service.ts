@@ -17,7 +17,7 @@ export class PdfStampingService {
     metadata?: { serial?: string; signedAt?: string }
   ): Promise<Uint8Array> {
     const existingPdfBytes = await readFile(filePath);
-    
+
     // Nếu là kiểu vô hình thì trả về nguyên bản
     if (style === "invisible") {
       return existingPdfBytes;
@@ -71,7 +71,7 @@ export class PdfStampingService {
       } else if (style === "diagonal") {
         // Chữ ký chéo nghiêng 45 độ giữa trang với độ mờ chuẩn
         const fontSize = Math.min(width, height) * 0.038;
-        page.drawText(`[DAI HOC BACH KHOA - HCMUT] ELECTRONICALLY SIGNED`, {
+        page.drawText(this.institutionText, {
           x: width * 0.15,
           y: height * 0.35,
           size: fontSize,
