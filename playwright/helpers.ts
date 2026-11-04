@@ -33,6 +33,8 @@ export async function createStudent(): Promise<Session & { password: string }> {
   const admin = await apiLogin("admin1", "admin123");
   const username = `e2e${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`;
   const password = "testpass1";
+  const faculties = await (await fetch(`${apiBase()}/archive-config/faculties`, { headers: { Authorization: `Bearer ${admin.token}` } })).json();
+  const facultyId = (faculties.find((item: { name: string }) => item.name === "Automation Faculty") || faculties[0])?.id;
   const created = await fetch(`${apiBase()}/admin/users`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${admin.token}` },
@@ -40,7 +42,7 @@ export async function createStudent(): Promise<Session & { password: string }> {
       username,
       password,
       displayName: `E2E ${username}`,
-      role: "student"
+      role: "student", facultyId
     })
   });
   const body = await created.json();
@@ -155,6 +157,7 @@ async function openPeriodIds() {
 }
 
 export async function loginUi(page: Page, username: string, password: string) {
+  await page.addInitScript(() => localStorage.setItem("thesis_portal_lang", "en"));
   await page.goto("/");
   await page.getByLabel("Username").fill(username);
   await page.getByLabel("Password").fill(password);
@@ -176,7 +179,7 @@ export async function chooseOption(page: Page, label: string, optionText: string
 
 export async function fillThesisForm(page: Page, titleEn: string, options: { pdf?: boolean } = { pdf: true }) {
   const period = await ensureOpenPeriod();
-  await chooseOption(page, "Faculty", period.facultyName);
+  await expect(page.getByRole("combobox", { name: "Faculty", exact: false })).toBeDisabled();
   await chooseOption(page, "Semester", period.semesterName);
   await chooseOption(page, "Submission period", period.periodName);
   await page.getByLabel("Thesis title (Vietnamese)").fill("Tieu de e2e");

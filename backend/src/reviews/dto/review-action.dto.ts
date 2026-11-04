@@ -12,8 +12,8 @@ export class ReviewActionDto {
   submissionId!: string;
 
   @IsString()
-  @IsIn(["approve", "reject", "archive"])
-  action!: "approve" | "reject" | "archive";
+  @IsIn(["approve", "reject", "archive", "return_to_editor"])
+  action!: "approve" | "reject" | "archive" | "return_to_editor";
 
   @IsString()
   @IsOptional()

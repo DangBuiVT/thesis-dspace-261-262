@@ -26,7 +26,7 @@ export default class MarkdownReporter implements Reporter {
   }
 
   onEnd() {
-    const output = path.join(process.cwd(), "docs", "test-output", "playwright-report.md");
+    const output = path.join(process.cwd(), "frontend", "docs", "evidence", "playwright-report.md");
     const list = [...this.rows.values()];
     const passed = list.filter((row) => row.status === "passed").length;
     const failed = list.filter((row) => row.status === "failed" || row.status === "timedOut");
@@ -35,14 +35,14 @@ export default class MarkdownReporter implements Reporter {
     const lines = [
       "# Playwright",
       "",
-      `- Thời điểm: ${new Date().toISOString()}`,
-      `- Đích: ${target}`,
-      `- Tổng: ${list.length}`,
+      `- Timestamp (UTC): ${new Date().toISOString()}`,
+      `- Target: ${target}`,
+      `- Total: ${list.length}`,
       `- Passed: ${passed}`,
       `- Failed: ${failed.length}`,
       `- Skipped: ${skipped}`,
       "",
-      "| Test | Kết quả | Thời gian |",
+      "| Test | Result | Duration |",
       "|---|---|---|",
       ...list.map(
         (row) => `| ${escapeCell(row.title)} | ${row.status} | ${row.durationMs} ms |`
@@ -50,7 +50,7 @@ export default class MarkdownReporter implements Reporter {
       ""
     ];
     if (failed.length) {
-      lines.push("## Lỗi", "");
+      lines.push("## Failures", "");
       for (const row of failed) {
         lines.push(`### ${row.title}`, "", "```", (row.error || "").trim(), "```", "");
       }

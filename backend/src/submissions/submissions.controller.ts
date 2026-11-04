@@ -248,9 +248,10 @@ export class SubmissionsController {
     "configure_system",
   )
   async getSubmissionHistory(
+    @Req() req: { user: JwtPayload },
     @Param("submissionId", ParseUUIDPipe) submissionId: string,
   ) {
-    return this.submissionsService.getSubmissionHistory(submissionId);
+    return this.submissionsService.getSubmissionHistory(req.user, submissionId);
   }
 
   @Patch(":id/metadata")

@@ -44,7 +44,7 @@ import {
   SubmissionStatus,
   WorkflowEventType,
   WorkflowRole,
-} from "src/common/constants/workflow.constants";
+} from "../common/constants/workflow.constants";
 import { UpdateMetadataDto } from "./dto/update-metadata.dto";
 
 const uploadsRoot = path.join(process.cwd(), "uploads", "submissions");
@@ -1916,7 +1916,7 @@ export class SubmissionsService {
       [studentId, studentId],
     );
 
-    return result.rows;
+    return this.workflow.annotate(result.rows);
   }
 
   async getAllSubmissions() {
@@ -2031,7 +2031,7 @@ export class SubmissionsService {
        ORDER BY s.created_at DESC`,
     );
 
-    return result.rows;
+    return this.workflow.annotate(result.rows);
   }
 
   async getSubmissionFileStream(
@@ -2210,103 +2210,102 @@ export class SubmissionsService {
     }
   }
 
-  async getSubmissionHistory(submissionId: string) {
-    const query = `
-      SELECT 
-        se.id,
-        se.created_at AS "createdAt",
-        se.actor_role AS "role",
-        se.event_type AS "eventType",
-        COALESCE(u.display_name, se.actor_id) AS "actorName",
-        se.payload->>'comment' AS "comment",
-        CASE 
-          WHEN se.event_type ILIKE '%approved%' THEN 'approved'
-          WHEN se.event_type ILIKE '%rejected%' THEN 'rejected'
-          WHEN se.event_type = 'SUBMIT' THEN 'submitted'
-          WHEN se.event_type = 'RESUBMIT' THEN 'resubmitted'
-          WHEN se.event_type = 'metadata_updated' THEN 'metadata_updated'
-          ELSE se.event_type
-        END AS "action",
-        se.payload
-      FROM submission_events se
-      LEFT JOIN users u ON se.actor_id = u.username
-      WHERE se.submission_id = $1::uuid
-      ORDER BY se.created_at ASC
-    `;
-    const result = await this.db.query(query, [submissionId]);
+  private async assertCanReadSubmission(user: JwtPayload, submissionId: string) {
+    const result = await this.db.query(
+      `SELECT s.student_id,
+              EXISTS (SELECT 1 FROM submission_authors a WHERE a.submission_id = s.id AND a.user_id = $2) AS coauthor,
+              EXISTS (SELECT 1 FROM reviews r WHERE r.submission_id = s.id AND r.reviewer_id = $2) AS assigned
+       FROM submissions s WHERE s.id = $1::uuid`,
+      [submissionId, user.sub],
+    );
+    const row = result.rows[0];
+    if (!row) throw new NotFoundException("Submission not found");
+    if (["library_staff", "director", "admin"].includes(user.role)) return;
+    if (user.role === "student" && (row.student_id === user.sub || row.coauthor)) return;
+    if (user.role === "reviewer" && row.assigned) return;
+    throw new ForbiddenException("You are not allowed to access this submission");
+  }
+
+  async getSubmissionHistory(user: JwtPayload, submissionId: string) {
+    await this.assertCanReadSubmission(user, submissionId);
+    const result = await this.db.query(
+      `SELECT se.id, se.created_at AS "createdAt", se.actor_role AS "actorRole",
+              se.actor_role AS "role", se.payload->>'comment' AS "comment",
+              CASE
+                WHEN se.event_type ILIKE '%approved%' THEN 'approved'
+                WHEN se.event_type ILIKE '%rejected%' THEN 'rejected'
+                WHEN se.event_type = 'SUBMIT' THEN 'submitted'
+                WHEN se.event_type = 'RESUBMIT' THEN 'resubmitted'
+                ELSE se.event_type
+              END AS "action",
+              se.event_type AS "eventType", COALESCE(u.display_name, se.actor_id) AS "actorName",
+              se.actor_id AS "actorId", se.payload
+       FROM submission_events se LEFT JOIN users u ON se.actor_id = u.username
+       WHERE se.submission_id = $1::uuid ORDER BY se.created_at ASC, se.id ASC`,
+      [submissionId],
+    );
     return result.rows;
   }
 
-  async updateMetadata(
-    user: JwtPayload,
-    submissionId: string,
-    dto: UpdateMetadataDto,
-  ) {
-    if (
-      user.role !== WorkflowRole.LIBRARY_STAFF &&
-      user.role !== WorkflowRole.ADMIN
-    ) {
-      throw new ForbiddenException(
-        "Only Library Staffs have permission to compile metadata",
-      );
+  async updateMetadata(user: JwtPayload, submissionId: string, dto: UpdateMetadataDto) {
+    if (user.role !== WorkflowRole.LIBRARY_STAFF && user.role !== WorkflowRole.ADMIN) {
+      throw new ForbiddenException("Only library staff can edit metadata");
     }
-
+    const fieldMap: Record<string, string> = {
+      titleVi: "title_vi", titleEn: "title_en", abstract: "abstract", keywords: "keywords",
+      thesisAdvisors: "thesis_advisors", major: "major", thesisYear: "thesis_year",
+      description: "description", dateIssued: "date_issued", publisher: "publisher",
+      documentType: "document_type", language: "language",
+    };
     const client = await this.db.connect();
     try {
       await client.query("BEGIN");
-
-      const res = await client.query<{ status: string; extra_metadata: any }>(
-        `SELECT status, extra_metadata FROM submissions WHERE id = $1::uuid LIMIT 1 FOR UPDATE`,
-        [submissionId],
+      const result = await client.query(
+        `SELECT s.*, ss.role AS active_role FROM submissions s
+         LEFT JOIN submission_steps ss ON ss.submission_id = s.id AND ss.sort_order = s.current_step
+         WHERE s.id = $1::uuid FOR UPDATE OF s`, [submissionId],
       );
-      const submission = res.rows[0];
-
-      if (!submission) {
-        throw new NotFoundException("Submission not found");
+      const row = result.rows[0];
+      if (!row) throw new NotFoundException("Submission not found");
+      if (row.status !== SubmissionStatus.REVIEWING || row.active_role !== WorkflowRole.LIBRARY_STAFF) {
+        throw new BadRequestException("This submission is not waiting for the Editor");
       }
-
-      if (submission.status !== SubmissionStatus.REVIEWING) {
-        throw new BadRequestException("File not in reviewing state");
+      const updates: Record<string, string> = {};
+      for (const [key, value] of Object.entries(dto)) {
+        if (value == null || key === "comment") continue;
+        const field = key === "title" ? "titleEn" : key;
+        if (!fieldMap[field]) throw new BadRequestException(`Unsupported metadata field: ${key}`);
+        updates[field] = String(value).trim();
       }
-
-      await client.query(
-        `UPDATE submissions 
-        SET title_vi = COALESCE($1, title_vi),
-            title_en = COALESCE($2, title_en),
-            description = COALESCE($3, description),
-            keywords = COALESCE($4, keywords),
-            thesis_advisors = COALESCE($5, thesis_advisors),
-            major = COALESCE($6, major),
-            thesis_year = COALESCE($7, thesis_year),
-            updated_at = NOW()
-        WHERE id = $8::uuid`,
-        [
-          dto.titleVi,
-          dto.titleEn,
-          dto.abstract,
-          dto.keywords,
-          dto.thesisAdvisors,
-          dto.major,
-          dto.thesisYear,
-          submissionId,
-        ],
-      );
-
-      await client.query(
-        `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
-        VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
-        [
-          randomUUID(),
-          submissionId,
-          user.sub,
-          WorkflowRole.LIBRARY_STAFF,
-          WorkflowEventType.METADATA_UPDATED,
-          JSON.stringify({ updatedFields: dto }),
-        ],
-      );
-
+      const meta = mergeThesisMetadata(updates, row.student_id, {
+        titleVi: row.title_vi, titleEn: row.title_en, thesisAdvisors: row.thesis_advisors,
+        major: row.major, thesisYear: row.thesis_year, description: row.description,
+      }, { required: false });
+      await this.assertConfiguredMetadata(meta);
+      if (updates.abstract === "" && await this.fieldMust("abstract", false)) {
+        throw new BadRequestException("Abstract is required");
+      }
+      const changes = Object.entries(updates)
+        .filter(([key, value]) => value !== String(row[fieldMap[key]] ?? ""))
+        .map(([field, after]) => ({ field, before: String(row[fieldMap[field]] ?? ""), after }));
+      if (changes.length) {
+        const values: unknown[] = changes.map(change => change.after);
+        const assignments = changes.map((change, index) => `${fieldMap[change.field]} = $${index + 1}`);
+        if (changes.some(change => change.field === "titleVi" || change.field === "titleEn")) {
+          values.push(meta.title);
+          assignments.push(`title = $${values.length}`);
+        }
+        values.push(submissionId);
+        await client.query(`UPDATE submissions SET ${assignments.join(", ")} WHERE id = $${values.length}::uuid`, values);
+        await client.query(
+          `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
+          [randomUUID(), submissionId, user.sub, user.role, WorkflowEventType.METADATA_UPDATED,
+           JSON.stringify({ changes, updatedFields: updates, comment: dto.comment?.trim() || null })],
+        );
+      }
       await client.query("COMMIT");
-      return { ok: true, message: "Cập nhật metadata thành công" };
+      return { ok: true, changes };
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
