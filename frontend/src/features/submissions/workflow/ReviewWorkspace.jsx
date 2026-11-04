@@ -52,8 +52,8 @@ export default function ReviewWorkspace({
     <div className="review-workspace">
       <Breadcrumb
         items={[
-          { title: t("Home") },
-          { title: t("My tasks") },
+          { title: t("Home"), href: "/home" },
+          { title: t("My tasks"), href: "/home" },
           { title: t("Submission details") },
         ]}
       />

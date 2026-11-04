@@ -12,6 +12,9 @@ Start with [the report](report.md) and its [PDF export](nhan-ui-weeks-1-6.pdf).
 | [Role and email flows](flows.md) | Editable Mermaid workflow, UI navigation, sequence, and notification diagrams |
 | [API contract](api-contract.md) | Metadata editing, history access, return transition, and archive semantics |
 | [Demo script](demo-script.md) | Repeatable role-based demonstration and Mailpit setup |
+| [Local demo data](demo-data.md) | Seed command, accounts, seven workflow scenarios, PDF fixtures, and verification |
+| [PDF preview stability](pdf-preview-stability.md) | Scrollbar resize-loop diagnosis, fix, screenshots, and regression coverage |
+| [Home and task navigation](home-navigation.md) | Logo/breadcrumb links, role-specific `/home`, accessibility, language, and browser history |
 | [Validation](validation.md) | Actual build/test results, environment, and remaining integration limits |
 | [Frontend architecture and refactor](refactoring.md) | Feature ownership, dependency diagram, before/after entry-point sizes, local skills, and maintenance checks |
 | [Screenshots](screenshots/README.md) | Before/after UI evidence, responsive view, and actual Mailpit inbox |

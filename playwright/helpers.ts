@@ -157,7 +157,11 @@ async function openPeriodIds() {
 }
 
 export async function loginUi(page: Page, username: string, password: string) {
-  await page.addInitScript(() => localStorage.setItem("thesis_portal_lang", "en"));
+  await page.addInitScript(() => {
+    if (!localStorage.getItem("thesis_portal_lang")) {
+      localStorage.setItem("thesis_portal_lang", "en");
+    }
+  });
   await page.goto("/");
   await page.getByLabel("Username").fill(username);
   await page.getByLabel("Password").fill(password);

@@ -21,24 +21,26 @@ export default function PortalShell({ children }) {
           flexWrap: "wrap",
         }}
       >
-        <Space align="center" size={12}>
-          <img
-            src={LOGO_PATH}
-            alt="BK TP.HCM logo"
-            style={{
-              width: 56,
-              height: 56,
-              objectFit: "contain",
-              display: "block",
-            }}
-          />
-          <Title
-            level={4}
-            style={{ color: "#fff", margin: 0, lineHeight: "1.3" }}
-          >
-            {t("Thesis Deposit Portal")}
-          </Title>
-        </Space>
+        <a href="/home" aria-label={t("Home")} className="portal-brand">
+          <Space align="center" size={12}>
+            <img
+              src={LOGO_PATH}
+              alt="BK TP.HCM logo"
+              style={{
+                width: 56,
+                height: 56,
+                objectFit: "contain",
+                display: "block",
+              }}
+            />
+            <Title
+              level={4}
+              style={{ color: "#fff", margin: 0, lineHeight: "1.3" }}
+            >
+              {t("Thesis Deposit Portal")}
+            </Title>
+          </Space>
+        </a>
         <Space size={12} align="center" wrap>
           <LanguageSwitch />
           {auth?.user ? (

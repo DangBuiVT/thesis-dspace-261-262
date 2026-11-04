@@ -10,17 +10,22 @@ export default function PdfCanvas({ url }) {
   const { t } = useI18n();
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
-  const [width, setWidth] = useState(500);
+  const [width, setWidth] = useState(0);
   const [loaded, setLoaded] = useState(null);
   const [pageNumber, setPageNumber] = useState(1);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
   const pdf = loaded?.url === url ? loaded.pdf : null;
 
   useEffect(() => {
-    const observer = new ResizeObserver((entries) =>
-      setWidth(Math.max(160, entries[0].contentRect.width - 24)),
-    );
+    const observer = new ResizeObserver(([entry]) => {
+      // contentRect already excludes padding. Hidden Ant tabs report zero width;
+      // keep their last size instead of starting another render in the background.
+      const measured = Math.floor(entry.contentRect.width);
+      if (measured > 0)
+        setWidth((previous) => (previous === measured ? previous : measured));
+    });
     observer.observe(containerRef.current);
     return () => observer.disconnect();
   }, []);
@@ -51,10 +56,10 @@ export default function PdfCanvas({ url }) {
       disposed = true;
       void task.destroy();
     };
-  }, [url]);
+  }, [url, attempt]);
 
   useEffect(() => {
-    if (!pdf) return;
+    if (!pdf || width <= 0) return;
     let cancelled = false;
     let renderTask;
     setReady(false);
@@ -117,19 +122,36 @@ export default function PdfCanvas({ url }) {
           {t("Next page")}
         </Button>
       </Space>
-      {error && <Alert type="error" showIcon message={t(error)} />}
+      {error && (
+        <Alert
+          type="error"
+          showIcon
+          message={t(error)}
+          action={
+            <Button onClick={() => setAttempt((value) => value + 1)}>
+              {t("Retry")}
+            </Button>
+          }
+        />
+      )}
       <div
         ref={containerRef}
         className="pdf-canvas-container"
         aria-busy={!ready && !error}
       >
-        {!ready && !error && <Spin />}
+        {!ready && !error && (
+          <div className="pdf-render-loading">
+            <Spin />
+          </div>
+        )}
         <canvas
           ref={canvasRef}
           role="img"
           aria-label={t("PDF preview")}
-          data-rendered={ready ? "true" : "false"}
-          style={{ display: ready && !error ? "block" : "none" }}
+          data-rendered={ready && !error ? "true" : "false"}
+          // Keep the page footprint during rendering. Removing it also removes
+          // the scrollbar, which used to cause a resize/cancel/render loop.
+          style={{ visibility: ready && !error ? "visible" : "hidden" }}
         />
       </div>
     </>

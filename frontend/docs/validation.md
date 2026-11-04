@@ -11,7 +11,9 @@ Evidence date: **4 November 2026**, Asia/Ho_Chi_Minh. Test reports contain UTC t
 | Backend production build | Passed | NestJS TypeScript compilation |
 | API regression | 51 passed / 0 failed | evidence/api-report.md |
 | Local SMTP integration | 8 passed / 0 failed | evidence/email-report.md |
-| Browser regression | 9 passed / 0 failed after refactor | evidence/playwright-report.md |
+| Browser regression | 12 passed / 0 failed after navigation fix | evidence/playwright-report.md |
+| Home navigation | Logo/breadcrumb links, direct load, history, EN/VI passed | playwright/home-navigation.spec.ts; home-navigation.md |
+| PDF scrollbar stability | Reproduced before fix; stable after fix | evidence/pdf-preview-stability.json |
 | Production preview | Nonblank PDF; worker HTTP 200; no page errors | evidence/production-preview.json |
 | Demonstration screenshots | Actual local UI and Mailpit capture | evidence/demo-evidence.json |
 
@@ -23,6 +25,8 @@ Evidence date: **4 November 2026**, Asia/Ho_Chi_Minh. Test reports contain UTC t
 - Return-to-Editor requires a reason, preserves academic approval and files, moves the item between the correct queues, and supports correction/forwarding/archive. Duplicate returns cannot both commit.
 - Local Mailpit receives actual submission/decision/archive/return notifications; the return email contains the director's reason. SMTP failure does not invalidate the submission.
 - Browser coverage includes actual nonblank PDF.js page rendering, failed metadata save, failed return and preserved reason, archive confirmation, PDF failure/retry, and Vietnamese mobile layout.
+- PDF stability coverage enables classic scrollbars and checks sustained page visibility through page changes, tab switches, resizing, and reopening. See [the diagnosis and fix](pdf-preview-stability.md).
+- Home navigation coverage checks `/home` links, keyboard activation, browser back/forward and reload, authenticated student/reviewer views, signed-out access, and Vietnamese language persistence.
 
 ## Environment and harness corrections
 
