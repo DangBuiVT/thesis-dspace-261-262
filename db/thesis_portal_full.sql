@@ -154,10 +154,6 @@ CREATE INDEX idx_submissions_status ON submissions (status);
 CREATE INDEX idx_submissions_student_id ON submissions (student_id);
 CREATE INDEX idx_submissions_period_id ON submissions (submission_period_id);
 
-CREATE UNIQUE INDEX idx_submissions_one_active_per_student
-  ON submissions (student_id)
-  WHERE status <> 'draft';
-
 CREATE UNIQUE INDEX idx_submissions_one_draft_per_student
   ON submissions (student_id)
   WHERE status = 'draft';
@@ -291,6 +287,7 @@ SET
 
 INSERT INTO users (username, password, display_name, auth_source, role, faculty_id) VALUES
   ('student1', 'student123', 'Student Alpha', 'local', 'student', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0005'),
+  ('student2', 'student123', 'Student Beta', 'local', 'student', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0005'),
   ('tuan.ngonhat', 'student123', 'Ngo Nhat Tuan', 'local', 'student', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0005'),
   ('reviewer1', 'review123', 'Reviewer One', 'local', 'reviewer', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0005'),
   ('admin1', 'admin123', 'Admin One', 'local', 'admin', NULL),

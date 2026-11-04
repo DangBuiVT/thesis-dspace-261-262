@@ -1,11 +1,11 @@
-import {
+﻿import {
   BadRequestException,
   Body,
   Controller,
   Delete,
   ForbiddenException,
   Get,
-  Param,
+  Param, Query,
   Patch,
   Post,
   Req,
@@ -223,6 +223,7 @@ export class SubmissionsController {
     @Req() req: { user: JwtPayload },
     @Param("submissionId") submissionId: string,
     @Param("fileId") fileId: string,
+    @Query("style") style: string | undefined,
   ) {
     const { stream, contentType, fileName } =
       await this.submissionsService.getSubmissionFileStream(

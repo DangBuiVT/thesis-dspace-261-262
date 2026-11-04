@@ -1,4 +1,4 @@
-import {
+﻿import {
   IsIn,
   IsNotEmpty,
   IsObject,
@@ -19,6 +19,10 @@ export class ReviewActionDto {
   @IsOptional()
   comment?: string;
 
+  @IsString()
+  @IsOptional()
+  signatureStyle?: string;
+
   @IsObject()
   @IsOptional()
   metadata?: {
@@ -35,5 +39,6 @@ export class ReviewActionDto {
     documentType?: string;
     description?: string;
     extraMetadata?: Record<string, string>;
+    signatureStyle?: string;
   };
 }

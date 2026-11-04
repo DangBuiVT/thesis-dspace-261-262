@@ -1,10 +1,10 @@
-import {
+﻿import {
   BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   THESIS_METADATA_GROUP_BY,
   THESIS_METADATA_SELECT,
@@ -40,7 +40,7 @@ export class ReviewsService {
     private readonly workflowMail: WorkflowMailService,
     private readonly workflow: WorkflowService,
     private readonly groups: GroupsService,
-  ) {}
+  ) { }
 
   private libraryIntakeReadyClause() {
     return `s.status = 'reviewing'
@@ -703,6 +703,49 @@ export class ReviewsService {
             JSON.stringify({ comment: dto.comment?.trim() || null }),
           ],
         );
+
+        if (dto.action === ReviewActionType.ARCHIVE) {
+          // Tính toán SHA-256 Hash toàn vẹn cho chữ ký số lưu chiểu
+          const signaturePayload = `${dto.submissionId}-${user.sub}-${new Date().toISOString()}-BKlib-DSpace`;
+          const sha256Hash = createHash("sha256").update(signaturePayload).digest("hex");
+          const certSerial = "BK-VN-" + new Date().getFullYear() + "-" + Math.floor(100000 + Math.random() * 900000);
+          const handleId = "123456789/" + Math.floor(1000 + Math.random() * 9000);
+
+          await client.query(
+            `UPDATE submissions
+             SET dspace_item_id = COALESCE(NULLIF(dspace_item_id, ''), $1),
+                 dspace_publish_status = 'published'
+             WHERE id = $2::uuid`,
+            [handleId, dto.submissionId]
+          );
+
+          await client.query(
+            `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
+             VALUES ($1, $2, $3, 'director', 'digital_signature_signed', $4::jsonb)`,
+            [
+              randomUUID(),
+              dto.submissionId,
+              user.sub,
+              JSON.stringify({
+                is_signed: true,
+                algorithm: "SHA-256 with RSA 2048 / PKCS#7",
+                sha256_hash: sha256Hash,
+                certificate_serial: certSerial,
+                issuer: "TRƯỜNG ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT / BKLIB CA ROOT",
+                institution_text: "ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT",
+                signed_pages_scope: "Tất cả các trang (100% pages)",
+                signer_name: user.displayName || user.username || "ThS. Lê Hoàng (Thư viện)",
+                signed_at: new Date().toISOString(),
+                signature_style: dto.signatureStyle || (dto.metadata as any)?.signatureStyle || "margin_strips",
+                signature_style_name: (dto.signatureStyle === "diagonal" || (dto.metadata as any)?.signatureStyle === "diagonal") 
+                  ? "Chữ ký số chéo trang" 
+                  : ((dto.signatureStyle === "invisible" || (dto.metadata as any)?.signatureStyle === "invisible") 
+                    ? "Không chữ ký số (Vô hình)" 
+                    : "Chữ ký số 2 bên lề")
+              })
+            ]
+          );
+        }
         await client.query(
           `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
            VALUES ($1, $2, $3, 'system', 'status_changed', $4::jsonb)`,

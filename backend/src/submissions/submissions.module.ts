@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+﻿import { Module } from "@nestjs/common";
 import { ArchiveModule } from "../archive/archive.module";
 import { AuthModule } from "../auth/auth.module";
 import { PermissionsGuard } from "../auth/permissions.guard";
@@ -8,11 +8,12 @@ import { WorkflowModule } from "../workflow/workflow.module";
 import { SubmissionFormModule } from "./submission-form.module";
 import { SubmissionsController } from "./submissions.controller";
 import { SubmissionsService } from "./submissions.service";
+import { PdfStampingService } from "../reviews/pdf-stamping.service";
 
 @Module({
   imports: [UsersModule, AuthModule, ArchiveModule, SubmissionFormModule, MailModule, WorkflowModule],
   controllers: [SubmissionsController],
-  providers: [SubmissionsService, PermissionsGuard],
+  providers: [SubmissionsService, PdfStampingService, PermissionsGuard],
   exports: [SubmissionFormModule]
 })
 export class SubmissionsModule {}

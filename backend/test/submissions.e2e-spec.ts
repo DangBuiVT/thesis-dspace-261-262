@@ -118,12 +118,15 @@ describe("Submission, PDF, and resubmit", () => {
     expect(response.status).toBe(401);
   });
 
-  it("TC-SUB-008 allows only one non-draft thesis per student", async () => {
+  it("TC-SUB-008 allows a student to submit another thesis after a previous one", async () => {
     const student = await freshStudent();
-    await submitted(student);
-    const second = await submitThesis(student.token, periodId, student.id, [REVIEWER1.id]);
-    expect(second.status).toBe(400);
-    expect(errorText(second.body)).toContain("Only one thesis");
+    await submitted(student, [REVIEWER1.id], { titleEn: "First thesis" });
+    const second = await submitThesis(student.token, periodId, student.id, [REVIEWER1.id], {
+      fields: { titleEn: "Second thesis", titleVi: "Luan van hai" }
+    });
+    expect(second.status).toBe(201);
+    createdIds.push(second.body.id);
+    expect(second.body.status).toBe("reviewing");
   });
 
   it("TC-PDF-001 stores a thesis PDF that the owner can download", async () => {

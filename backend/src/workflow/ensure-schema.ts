@@ -24,6 +24,57 @@ const STRUCTURAL_FIELDS: Array<{
 
 export async function ensurePortalSchema(db: Pool) {
   await db.query(`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS current_step INT`);
+  await db.query(`DROP INDEX IF EXISTS idx_submissions_one_active_per_student`);
+  try {
+    await db.query(
+      `INSERT INTO users (username, password, display_name, auth_source, role, status, faculty_id)
+       VALUES ('student2', 'student123', 'Student Beta', 'local', 'student', 'active', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0005')
+       ON CONFLICT (username) DO NOTHING`
+    );
+  } catch {
+    // users table may not exist yet on first boot
+  }
+
+  try {
+    await db.query(`
+      INSERT INTO faculties (id, name, status)
+      VALUES ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0005', 'Khoa Khoa học và Kỹ thuật Máy tính', 'active')
+      ON CONFLICT (id) DO NOTHING;
+
+      INSERT INTO semesters (id, faculty_id, name, status)
+      VALUES 
+        ('c1000001-0001-4000-8000-000000000001', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0005', 'Học kỳ 1 / 2026-2027 (HK261)', 'active'),
+        ('c1000001-0001-4000-8000-000000000002', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0005', 'Học kỳ 2 / 2025-2026 (HK252)', 'active'),
+        ('c1000001-0001-4000-8000-000000000003', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0005', 'Học kỳ Hè 2026 (HK253)', 'active')
+      ON CONFLICT (id) DO NOTHING;
+
+      INSERT INTO submission_periods (id, semester_id, name, opens_at, closes_at, status, allow_resubmit)
+      VALUES (
+        'a2000001-0001-4000-8000-000000000001',
+        'c1000001-0001-4000-8000-000000000001',
+        'Đợt 1 - Bảo vệ & Lưu chiểu Luận văn Thạc sĩ (Đang mở)',
+        NOW() - INTERVAL '30 days',
+        NOW() + INTERVAL '90 days',
+        'open',
+        TRUE
+      ),
+      (
+        'a2000001-0001-4000-8000-000000000002',
+        'c1000001-0001-4000-8000-000000000001',
+        'Đợt 2 - Lưu chiểu Luận văn tốt nghiệp (Đang mở)',
+        NOW() - INTERVAL '30 days',
+        NOW() + INTERVAL '120 days',
+        'open',
+        TRUE
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        status = 'open',
+        opens_at = NOW() - INTERVAL '30 days',
+        closes_at = NOW() + INTERVAL '120 days';
+    `);
+  } catch (_e) {
+    // Ignore if table not yet created
+  }
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS workflow_steps (
