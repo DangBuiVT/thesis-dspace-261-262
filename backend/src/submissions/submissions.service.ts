@@ -2244,10 +2244,11 @@ export class SubmissionsService {
   ) {
     if (
       user.role !== WorkflowRole.LIBRARY_STAFF &&
+      user.role !== WorkflowRole.DIRECTOR &&
       user.role !== WorkflowRole.ADMIN
     ) {
       throw new ForbiddenException(
-        "Only Library Staffs have permission to compile metadata",
+        "Only Library Staff, Director, or Admin have permission to compile metadata",
       );
     }
 
@@ -2265,8 +2266,11 @@ export class SubmissionsService {
         throw new NotFoundException("Submission not found");
       }
 
-      if (submission.status !== SubmissionStatus.REVIEWING) {
-        throw new BadRequestException("File not in reviewing state");
+      if (
+        submission.status !== SubmissionStatus.REVIEWING &&
+        submission.status !== SubmissionStatus.APPROVED
+      ) {
+        throw new BadRequestException("File is not in reviewing or director pending state");
       }
 
       await client.query(
@@ -2299,7 +2303,7 @@ export class SubmissionsService {
           randomUUID(),
           submissionId,
           user.sub,
-          WorkflowRole.LIBRARY_STAFF,
+          user.role,
           WorkflowEventType.METADATA_UPDATED,
           JSON.stringify({ updatedFields: dto }),
         ],

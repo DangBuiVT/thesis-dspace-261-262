@@ -55,6 +55,7 @@ export class ReviewsService {
       )`;
   }
   async assertFacultyScope(user: JwtPayload, submissionId: string) {
+    // Quản trị viên (admin) có toàn quyền trên toàn hệ thống, bỏ qua ràng buộc khoa
     if (user.role === WorkflowRole.ADMIN) return;
 
     const res = await this.db.query(
@@ -67,9 +68,11 @@ export class ReviewsService {
     );
 
     const record = res.rows[0];
+    // Kiểm tra tồn tại của bài nộp hoặc đợt nộp tương ứng
     if (!record) {
       throw new NotFoundException("Submission or Period not found");
     }
+    // Ràng buộc RBAC: Cấm reviewer duyệt bài nộp thuộc khoa/bộ sưu tập khác
     if (
       record.faculty_id &&
       record.user_faculty_id &&
@@ -81,6 +84,7 @@ export class ReviewsService {
     }
   }
   async getMyQueue(user: JwtPayload) {
+    // Chỉ người dùng có vai trò reviewer mới được truy cập danh sách chờ duyệt học thuật
     if (user.role !== WorkflowRole.REVIEWER) {
       throw new ForbiddenException();
     }
@@ -165,13 +169,16 @@ export class ReviewsService {
   }
 
   async act(user: JwtPayload, dto: ReviewActionDto) {
+    // Chỉ người dùng có vai trò reviewer mới được thực hiện hành động tại Bước 1
     if (user.role !== WorkflowRole.REVIEWER) {
       throw new ForbiddenException();
     }
+    // Reviewer không có quyền lưu chiểu (archive)
     if (dto.action === ReviewActionType.ARCHIVE) {
       throw new BadRequestException("Reviewers cannot archive submissions");
     }
 
+    // Xác nhận hồ sơ đang ở đúng chặng và vai trò Reviewer
     await this.workflow.assertCurrentRole(
       dto.submissionId,
       WorkflowRole.REVIEWER,
@@ -189,17 +196,21 @@ export class ReviewsService {
       [dto.submissionId, user.sub],
     );
     const row = assignment.rows[0];
+    // Kiểm tra xem bài nộp có được phân công cho reviewer này hay không
     if (!row) {
       throw new NotFoundException("Submission not assigned to this reviewer");
     }
+    // Chặn duyệt lại nếu reviewer đã đưa ra quyết định trước đó
     if (row.decision !== ReviewDecision.PENDING) {
       throw new BadRequestException("Review already completed");
     }
+    // Đảm bảo hồ sơ đang ở trạng thái reviewing
     if (row.submission_status !== SubmissionStatus.REVIEWING) {
       throw new BadRequestException("Submission is not in reviewer stage");
     }
     await this.groups.assertReviewerMayAct(user.sub, row.student_id);
 
+    // Bắt buộc nhập lý do nếu từ chối bài nộp
     if (dto.action === ReviewActionType.REJECT) {
       if (!dto.comment || !dto.comment.trim()) {
         throw new BadRequestException("Reject reason is required");
@@ -217,6 +228,7 @@ export class ReviewsService {
 
     const client = await this.db.connect();
     try {
+      // Bắt đầu transaction cập nhật quyết định của Reviewer và trạng thái bài nộp
       await client.query("BEGIN");
       await client.query(
         `UPDATE reviews
@@ -250,6 +262,7 @@ export class ReviewsService {
         ],
       );
 
+      // Nhánh 1: Nếu reviewer từ chối -> chuyển trạng thái hồ sơ sang REJECTED và ghi vết sự kiện
       if (dto.action === ReviewActionType.REJECT) {
         await client.query(
           `UPDATE submissions SET status = $1 WHERE id = $2::uuid`,
@@ -270,6 +283,7 @@ export class ReviewsService {
           ],
         );
       } else {
+        // Nhánh 2: Reviewer đồng thuận -> kiểm tra xem tất cả reviewers được gán đã duyệt hết chưa
         const pending = await client.query(
           `SELECT COUNT(*)::int AS cnt
            FROM reviews
@@ -277,6 +291,7 @@ export class ReviewsService {
           [dto.submissionId],
         );
         const pendingCount = pending.rows[0]?.cnt ?? 0;
+        // Nếu tất cả reviewers đã đồng thuận -> chuyển tiếp hồ sơ sang bước tiếp theo trong workflow
         if (pendingCount === 0) {
           allReviewersApproved = true;
           const advanced = await this.workflow.advance(
@@ -303,15 +318,19 @@ export class ReviewsService {
 
       await client.query("COMMIT");
     } catch (error) {
+      // Rollback toàn bộ dữ liệu nếu có lỗi trong transaction
       await client.query("ROLLBACK");
       throw error;
     } finally {
+      // Giải phóng client kết nối database về pool
       client.release();
     }
 
     const actorName = user.displayName || user.username;
 
+    // Gửi email thông báo cho sinh viên dựa theo kết quả duyệt
     if (dto.action === "reject") {
+      // Thông báo từ chối tới sinh viên kèm lý do
       this.workflowMail.notifySafely("student_reviewer_rejected", () =>
         this.workflowMail.notifyStudentOnReviewerDecision(
           dto.submissionId,
@@ -321,6 +340,7 @@ export class ReviewsService {
         ),
       );
     } else {
+      // Thông báo một reviewer đã chấp thuận
       this.workflowMail.notifySafely("student_reviewer_approved", () =>
         this.workflowMail.notifyStudentOnReviewerDecision(
           dto.submissionId,
@@ -328,7 +348,9 @@ export class ReviewsService {
           actorName,
         ),
       );
+      // Khi toàn bộ reviewers đã chấp thuận -> kích hoạt thông báo chuyển chặng
       if (allReviewersApproved) {
+        // Nếu bước kế tiếp là Cán bộ thư viện -> gửi email thông báo có hồ sơ mới cần tiếp nhận
         if (enteredRole === WorkflowRole.LIBRARY_STAFF) {
           this.workflowMail.notifySafely("library_review", () =>
             this.workflowMail.notifyLibraryOnAllReviewersApproved(
@@ -336,6 +358,7 @@ export class ReviewsService {
             ),
           );
         }
+        // Gửi email báo cho sinh viên biết toàn bộ reviewer đã thông qua
         this.workflowMail.notifySafely("student_all_reviewers_approved", () =>
           this.workflowMail.notifyStudentOnAllReviewersApproved(
             dto.submissionId,
@@ -414,6 +437,7 @@ export class ReviewsService {
   }
 
   async getLibraryQueue(user: JwtPayload) {
+    // Chỉ cán bộ thư viện mới có quyền xem danh sách chờ tiếp nhận và biên tập
     if (user.role !== WorkflowRole.LIBRARY_STAFF) {
       throw new ForbiddenException();
     }
@@ -424,6 +448,7 @@ export class ReviewsService {
   }
 
   async getDirectorQueue(user: JwtPayload) {
+    // Chỉ giám đốc thư viện mới có quyền xem danh sách chờ phê duyệt lưu chiểu
     if (user.role !== WorkflowRole.DIRECTOR) {
       throw new ForbiddenException();
     }
@@ -441,6 +466,7 @@ export class ReviewsService {
        LIMIT 1`,
       [submissionId],
     );
+    // Chặn nếu hồ sơ chưa thỏa mãn điều kiện sẵn sàng cho thư viện tiếp nhận
     if (!result.rows[0]) {
       throw new BadRequestException(
         "Submission is not ready for library intake",
@@ -449,9 +475,11 @@ export class ReviewsService {
   }
 
   async libraryAct(user: JwtPayload, dto: ReviewActionDto) {
+    // Kiểm tra quyền hạn: Chỉ cán bộ thư viện mới được duyệt Bước 2
     if (user.role !== WorkflowRole.LIBRARY_STAFF) {
       throw new ForbiddenException();
     }
+    // Cán bộ thư viện không có quyền trực tiếp đưa bài vào kho lưu trữ vĩnh viễn (archive)
     if (dto.action === ReviewActionType.ARCHIVE) {
       throw new BadRequestException("Library staff cannot archive submissions");
     }
@@ -460,10 +488,12 @@ export class ReviewsService {
       dto.submissionId,
       WorkflowRole.LIBRARY_STAFF,
     );
+    // Đảm bảo hồ sơ đang trong trạng thái reviewing
     if (step.status !== SubmissionStatus.REVIEWING) {
       throw new BadRequestException("Submission is not in reviewing stage");
     }
 
+    // Nếu từ chối, bắt buộc cán bộ thư viện phải nhập lý do
     if (
       dto.action === ReviewActionType.REJECT &&
       (!dto.comment || !dto.comment.trim())
@@ -480,21 +510,25 @@ export class ReviewsService {
       dto.action === ReviewActionType.REJECT ? dto.comment?.trim() || "" : "";
     const client = await this.db.connect();
     try {
+      // Bắt đầu transaction xử lý quyết định của Thư viện
       await client.query("BEGIN");
       const current = await client.query<{ status: string }>(
         `SELECT status FROM submissions WHERE id = $1::uuid LIMIT 1 FOR UPDATE`,
         [dto.submissionId],
       );
       const row = current.rows[0];
+      // Khóa và xác thực lại trạng thái hồ sơ trước khi cập nhật
       if (!row || row.status !== SubmissionStatus.REVIEWING) {
         throw new BadRequestException("Submission is not in reviewing stage");
       }
 
+      // Nhánh 1: Thư viện chấp nhận hồ sơ -> chuyển tiếp sang bước của Giám đốc (Bước 3)
       if (dto.action === ReviewActionType.APPROVE) {
         const advanced = await this.workflow.advance(client, dto.submissionId);
         nextStatus = advanced.toStatus as SubmissionStatus;
         enteredRole = advanced.enteredRole;
       } else {
+        // Nhánh 2: Thư viện từ chối hồ sơ -> cập nhật trạng thái rejected trả về cho sinh viên
         await client.query(
           `UPDATE submissions SET status = 'rejected' WHERE id = $1::uuid`,
           [dto.submissionId],
@@ -537,19 +571,24 @@ export class ReviewsService {
       );
       await client.query("COMMIT");
     } catch (error) {
+      // Rollback transaction nếu xảy ra lỗi trong quá trình duyệt của Thư viện
       await client.query("ROLLBACK");
       throw error;
     } finally {
+      // Trả lại connection client về pool
       client.release();
     }
 
     const actorName = user.displayName || user.username;
+    // Gửi email thông báo tùy theo kết quả duyệt của Cán bộ thư viện
     if (dto.action === ReviewActionType.APPROVE) {
+      // Nếu bước tiếp theo là Giám đốc duyệt -> gửi email thông báo cho Giám đốc
       if (enteredRole === WorkflowRole.DIRECTOR) {
         this.workflowMail.notifySafely("director_review", () =>
           this.workflowMail.notifyDirectorsOnLibraryApproved(dto.submissionId),
         );
       }
+      // Gửi email báo cho sinh viên biết thư viện đã thông qua
       this.workflowMail.notifySafely("student_library_approved", () =>
         this.workflowMail.notifyStudentOnLibraryDecision(
           dto.submissionId,
@@ -558,6 +597,7 @@ export class ReviewsService {
         ),
       );
     } else {
+      // Gửi email báo cho sinh viên biết thư viện đã từ chối kèm lý do cụ thể
       this.workflowMail.notifySafely("student_library_rejected", () =>
         this.workflowMail.notifyStudentOnLibraryDecision(
           dto.submissionId,
@@ -572,12 +612,14 @@ export class ReviewsService {
   }
 
   async directorAct(user: JwtPayload, dto: ReviewActionDto) {
+    // Kiểm tra quyền hạn: Chỉ Giám đốc mới được thực hiện hành động tại Bước 3
     if (user.role !== WorkflowRole.DIRECTOR) {
       throw new ForbiddenException();
     }
+    // Giám đốc chỉ được phép thực hiện 3 hành động: approve, archive hoặc reject
     if (
       dto.action !== ReviewActionType.ARCHIVE &&
-      dto.action !== ReviewActionType.REJECT &&
+      dto.action !== ReviewActionType.RETURN_TO_EDITOR &&
       dto.action !== ReviewActionType.APPROVE
     ) {
       throw new BadRequestException(
@@ -588,9 +630,11 @@ export class ReviewsService {
       dto.submissionId,
       WorkflowRole.DIRECTOR,
     );
+    // Chỉ bước cuối cùng của Giám đốc mới được phép thực hiện archive
     if (dto.action === ReviewActionType.ARCHIVE && !step.isLast) {
       throw new BadRequestException("Only the final director step can archive");
     }
+    // Bước cuối cùng bắt buộc phải archive chứ không được approve thông thường
     if (dto.action === ReviewActionType.APPROVE && step.isLast) {
       throw new BadRequestException(
         "The final director step is archived, not approved",
@@ -598,23 +642,31 @@ export class ReviewsService {
     }
 
     const actorName = user.displayName || user.username;
-    const rejectReason =
-      dto.action === ReviewActionType.REJECT ? dto.comment?.trim() || "" : "";
-    if (dto.action === ReviewActionType.REJECT && !rejectReason) {
-      throw new BadRequestException("Reject reason is required");
+    const returnReason =
+      dto.action === ReviewActionType.RETURN_TO_EDITOR
+        ? dto.comment?.trim() || ""
+        : "";
+    // Giám đốc chuyển về bắt buộc phải cung cấp lý do
+    if (dto.action === ReviewActionType.RETURN_TO_EDITOR && !returnReason) {
+      throw new BadRequestException(
+        "Return comment for library staff is required",
+      );
     }
 
     const client = await this.db.connect();
     try {
+      // Bắt đầu transaction ghi nhận quyết định cuối cùng của Giám đốc
       await client.query("BEGIN");
       const current = await client.query<{ status: string }>(
         `SELECT status FROM submissions WHERE id = $1::uuid LIMIT 1 FOR UPDATE`,
         [dto.submissionId],
       );
       const row = current.rows[0];
+      // Kiểm tra hồ sơ có tồn tại trong hệ thống hay không
       if (!row) {
         throw new NotFoundException("Submission not found");
       }
+      // Đảm bảo hồ sơ đang ở trạng thái chờ Giám đốc duyệt (approved hoặc reviewing)
       if (
         row.status !== SubmissionStatus.APPROVED &&
         row.status !== SubmissionStatus.REVIEWING
@@ -624,11 +676,13 @@ export class ReviewsService {
         );
       }
 
+      // Nhánh 1: Giám đốc chấp thuận hoặc phê duyệt lưu chiểu hồ sơ (Archive)
       if (
         dto.action === ReviewActionType.ARCHIVE ||
         dto.action === ReviewActionType.APPROVE
       ) {
         const advanced = await this.workflow.advance(client, dto.submissionId);
+        // Kiểm tra tính hợp lệ nếu thực hiện archive nhưng workflow chưa đến chặng lưu trữ
         if (dto.action === ReviewActionType.ARCHIVE && !advanced.archived) {
           throw new BadRequestException(
             "Only the final director step can archive",
@@ -663,48 +717,58 @@ export class ReviewsService {
             }),
           ],
         );
-      } else {
-        await client.query(
-          `UPDATE submissions SET status = 'rejected' WHERE id = $1::uuid`,
-          [dto.submissionId],
+      } else // Nhánh 2: Giám đốc từ chối hồ sơ -> chuyển trạng thái rejected và ghi vết
+      {
+        // Gọi hàm rollback bước về thư viện
+        const reverted = await this.workflow.revertToRole(
+          client,
+          dto.submissionId,
+          WorkflowRole.LIBRARY_STAFF,
         );
+        // Ghi log sự kiện kiểm toán DIRECTOR_RETURNED
         await client.query(
           `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
-           VALUES ($1, $2, $3, 'director', 'director_rejected', $4::jsonb)`,
+     VALUES ($1, $2, $3, 'director', $4, $5::jsonb)`,
           [
             randomUUID(),
             dto.submissionId,
             user.sub,
-            JSON.stringify({ comment: rejectReason }),
+            WorkflowEventType.DIRECTOR_RETURNED,
+            JSON.stringify({ comment: dto.comment?.trim() }),
           ],
         );
+        // Ghi log chuyển trạng thái hệ thống
         await client.query(
           `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
-           VALUES ($1, $2, $3, 'system', 'status_changed', $4::jsonb)`,
+     VALUES ($1, $2, $3, 'system', 'status_changed', $4::jsonb)`,
           [
             randomUUID(),
             dto.submissionId,
             user.sub,
             JSON.stringify({
-              from: row.status,
-              to: SubmissionStatus.REJECTED,
-              reason: "director_rejected",
+              from: reverted.fromStatus,
+              to: reverted.toStatus,
+              reason: WorkflowEventType.DIRECTOR_RETURNED,
             }),
           ],
         );
       }
       await client.query("COMMIT");
     } catch (error) {
+      // Rollback transaction nếu có lỗi xảy ra trong quá trình Giám đốc phê duyệt
       await client.query("ROLLBACK");
       throw error;
     } finally {
+      // Giải phóng kết nối database về pool
       client.release();
     }
 
+    // Nếu chỉ là bước approve trung gian của giám đốc -> trả về kết quả thành công
     if (dto.action === ReviewActionType.APPROVE) {
       return { ok: true };
     }
 
+    // Nếu là bước archive cuối cùng -> gửi email chúc mừng hoàn thành lưu chiểu cho sinh viên
     if (dto.action === ReviewActionType.ARCHIVE) {
       this.workflowMail.notifySafely("student_director_approved", () =>
         this.workflowMail.notifyStudentOnDirectorDecision(
@@ -721,14 +785,14 @@ export class ReviewsService {
       };
     }
 
-    this.workflowMail.notifySafely("student_director_rejected", () =>
-      this.workflowMail.notifyStudentOnDirectorDecision(
+    // Trường hợp giám đốc từ chối -> gửi email thông báo từ chối kèm lý do cho sinh viên
+    this.workflowMail.notifySafely("library_returned", () =>
+      this.workflowMail.notifyLibraryOnDirectorReturned(
         dto.submissionId,
-        SubmissionStatus.REJECTED,
         actorName,
-        rejectReason,
+        dto.comment,
       ),
     );
-    return { ok: true };
+    return { ok: true, message: "Returned to library editor successfully" };
   }
 }
