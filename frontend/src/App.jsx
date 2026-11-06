@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
   Alert,
   Button,
@@ -1877,6 +1877,7 @@ function App() {
           username: values.username.trim().toLowerCase(),
           password: values.password,
           displayName: values.displayName.trim(),
+          ...(values.facultyId ? { facultyId: values.facultyId } : {}),
         }),
       });
       const data = await res.json();
@@ -3616,6 +3617,7 @@ function App() {
               }}
               footer={null}
               destroyOnClose
+              afterOpenChange={(open) => { if (open) void loadArchiveFaculties(); }}
             >
               <Form
                 form={registerForm}
@@ -3654,6 +3656,20 @@ function App() {
                   ]}
                 >
                   <Input.Password placeholder="Nhập mật khẩu (tối thiểu 6 ký tự)" />
+                </Form.Item>
+
+                <Form.Item
+                  label="Khoa / Đơn vị"
+                  name="facultyId"
+                >
+                  <Select
+                    placeholder="Chọn khoa (không bắt buộc)"
+                    allowClear
+                    showSearch
+                    optionFilterProp="label"
+                    loading={isLoadingArchiveFaculties}
+                    options={archiveFaculties}
+                  />
                 </Form.Item>
 
                 <Form.Item style={{ marginBottom: 0, marginTop: 16 }}>

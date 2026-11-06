@@ -1,4 +1,4 @@
-import { IsString, Matches, MinLength } from "class-validator";
+import { IsOptional, IsString, Matches, MinLength } from "class-validator";
 
 const FACULTY_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -15,7 +15,8 @@ export class RegisterDto {
   @MinLength(2)
   displayName!: string;
 
+  @IsOptional()
   @IsString()
   @Matches(FACULTY_UUID, { message: "facultyId must be a UUID" })
-  facultyId!: string;
+  facultyId?: string;
 }

@@ -22,7 +22,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly adminSettingsService: AdminSettingsService,
     private readonly googleAuthService: GoogleAuthService
-  ) {}
+  ) { }
 
   async getLoginOptions() {
     const googleConfigured = this.googleAuthService.isConfigured();
@@ -160,16 +160,20 @@ export class AuthService {
     if (!input.displayName || input.displayName.trim().length < 2) {
       throw new BadRequestException("Họ và tên phải có ít nhất 2 ký tự.");
     }
-    const faculty = await this.usersService.findActiveFaculty(input.facultyId);
-    if (!faculty) {
-      throw new BadRequestException("Faculty not found");
+    let facultyId: string | undefined;
+    if (input.facultyId) {
+      const faculty = await this.usersService.findActiveFaculty(input.facultyId);
+      if (!faculty) {
+        throw new BadRequestException("Faculty not found");
+      }
+      facultyId = faculty.id;
     }
     const user = await this.usersService.createUser({
       username,
       password: input.password,
       displayName: input.displayName.trim(),
       role: "student",
-      facultyId: faculty.id
+      facultyId: facultyId
     });
     return this.sessionResponse(user);
   }
