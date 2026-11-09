@@ -3,7 +3,7 @@ import { createStudent, deleteSubmission, loginUi, logoutUi, submitViaApi } from
 
 async function approveAsReviewer(page: import("@playwright/test").Page, title: string) {
   await loginUi(page, "reviewer1", "review123");
-  await page.getByRole("row", { name: title }).getByRole("button", { name: "Approve" }).click();
+  await page.getByRole("row", { name: title }).first().getByRole("button", { name: "Approve" }).click();
   await expect(page.locator(".ant-message").getByText("Approved", { exact: true })).toBeVisible();
   await logoutUi(page);
 }
@@ -15,12 +15,13 @@ test("E2E-004 library approves and the director archives in the portal", async (
   try {
     await approveAsReviewer(page, title);
     await loginUi(page, "library1", "library123");
-    await page.getByRole("row", { name: title }).getByRole("button", { name: "Approve" }).click();
+    await page.getByRole("row", { name: title }).first().getByRole("button", { name: "Approve" }).click();
     await expect(page.getByText("Passed library intake")).toBeVisible();
     await logoutUi(page);
 
     await loginUi(page, "director1", "director123");
-    await page.getByRole("row", { name: title }).getByRole("button", { name: "Archive" }).click();
+    await page.getByRole("row", { name: title }).first().getByRole("button", { name: "Commit to Archive" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Commit to Archive", exact: true }).click();
     await expect(page.getByText(/Push to DSpace later|Submission archived/)).toBeVisible();
   } finally {
     await deleteSubmission(created.id);
@@ -34,17 +35,18 @@ test("E2E-005 library pushes an archived thesis to DSpace", async ({ page }) => 
   try {
     await approveAsReviewer(page, title);
     await loginUi(page, "library1", "library123");
-    await page.getByRole("row", { name: title }).getByRole("button", { name: "Approve" }).click();
+    await page.getByRole("row", { name: title }).first().getByRole("button", { name: "Approve" }).click();
     await logoutUi(page);
     await loginUi(page, "director1", "director123");
-    await page.getByRole("row", { name: title }).getByRole("button", { name: "Archive" }).click();
+    await page.getByRole("row", { name: title }).first().getByRole("button", { name: "Commit to Archive" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Commit to Archive", exact: true }).click();
     await expect(page.getByText(/Push to DSpace later|Submission archived/)).toBeVisible();
     await logoutUi(page);
 
     await loginUi(page, "library1", "library123");
     await page.getByRole("tab", { name: "Archive configuration" }).click();
     await page.getByRole("tab", { name: "Push to DSpace" }).click();
-    const row = page.getByRole("row", { name: title });
+    const row = page.getByRole("row", { name: title }).first();
     await expect(row).toBeVisible();
     await row.locator("input[type=checkbox]").check();
     await page.getByRole("button", { name: /Push selected/ }).click();

@@ -1,4 +1,4 @@
-import { IsOptional, isString, IsString } from "class-validator";
+import { IsOptional, IsString } from "class-validator";
 import { ThesisMetadataFieldsDto } from "./thesis-metadata-fields.dto";
 
 export class UpdateMetadataDto extends ThesisMetadataFieldsDto {

@@ -142,7 +142,7 @@ export default function AdminPanel({
   hideEmailTab = false,
   hideFormFieldsTab = false,
   emailOnly = false,
-  formFieldsOnly = false
+  formFieldsOnly = false,
 }) {
   const { t, lang } = useI18n();
   const tr = (value) => translateApiMessage(value, t);

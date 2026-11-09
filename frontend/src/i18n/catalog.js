@@ -1,5 +1,7 @@
+import { workflowCatalog } from "./workflow";
 /** Flat VI/EN catalog. Keys are stable English ids; missing keys fall back to English. */
 export const catalog = {
+  ...workflowCatalog,
   "Thesis Deposit Portal": { en: "Thesis Deposit Portal", vi: "Cổng nộp luận văn" },
   Login: { en: "Login", vi: "Đăng nhập" },
   "HCMUT Google sign-in": { en: "HCMUT Google sign-in", vi: "Đăng nhập Google HCMUT" },

@@ -1,0 +1,2 @@
+# Preserve PDF byte offsets and stream data on Windows checkouts.
+*.pdf binary
