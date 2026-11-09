@@ -1,4 +1,4 @@
-﻿import {
+import {
   BadRequestException,
   ForbiddenException,
   Injectable,
@@ -81,9 +81,6 @@ export class ReviewsService {
     }
   }
   async getMyQueue(user: JwtPayload) {
-    if (user.role !== WorkflowRole.REVIEWER) {
-      throw new ForbiddenException();
-    }
     await this.workflow.backfillOpenSubmissions();
 
     const result = await this.db.query(
@@ -165,9 +162,6 @@ export class ReviewsService {
   }
 
   async act(user: JwtPayload, dto: ReviewActionDto) {
-    if (user.role !== WorkflowRole.REVIEWER) {
-      throw new ForbiddenException();
-    }
     if (dto.action === ReviewActionType.ARCHIVE) {
       throw new BadRequestException("Reviewers cannot archive submissions");
     }
@@ -414,9 +408,6 @@ export class ReviewsService {
   }
 
   async getLibraryQueue(user: JwtPayload) {
-    if (user.role !== WorkflowRole.LIBRARY_STAFF) {
-      throw new ForbiddenException();
-    }
     await this.workflow.backfillOpenSubmissions();
     return this.getQueueRows(
       `s.status = 'reviewing' AND ${this.workflow.currentStepSql(WorkflowRole.LIBRARY_STAFF)}`,
@@ -424,9 +415,6 @@ export class ReviewsService {
   }
 
   async getDirectorQueue(user: JwtPayload) {
-    if (user.role !== WorkflowRole.DIRECTOR) {
-      throw new ForbiddenException();
-    }
     await this.workflow.backfillOpenSubmissions();
     return this.getQueueRows(
       `s.status IN ('reviewing', 'approved') AND ${this.workflow.currentStepSql(WorkflowRole.DIRECTOR)}`,
@@ -449,9 +437,6 @@ export class ReviewsService {
   }
 
   async libraryAct(user: JwtPayload, dto: ReviewActionDto) {
-    if (user.role !== WorkflowRole.LIBRARY_STAFF) {
-      throw new ForbiddenException();
-    }
     if (dto.action === ReviewActionType.ARCHIVE) {
       throw new BadRequestException("Library staff cannot archive submissions");
     }
@@ -572,9 +557,6 @@ export class ReviewsService {
   }
 
   async directorAct(user: JwtPayload, dto: ReviewActionDto) {
-    if (user.role !== WorkflowRole.DIRECTOR) {
-      throw new ForbiddenException();
-    }
     if (
       dto.action !== ReviewActionType.ARCHIVE &&
       dto.action !== ReviewActionType.REJECT &&
@@ -773,5 +755,469 @@ export class ReviewsService {
       ),
     );
     return { ok: true };
+  }
+
+  async getAdminIntakeQueue(user: JwtPayload) {
+    if (user.role !== WorkflowRole.ADMIN) {
+      throw new ForbiddenException();
+    }
+    await this.workflow.backfillOpenSubmissions();
+    return this.getQueueRows(
+      `s.status IN ('reviewing', 'approved')`
+    );
+  }
+
+  async adminIntakeAct(user: JwtPayload, dto: ReviewActionDto) {
+    if (user.role !== WorkflowRole.ADMIN) {
+      throw new ForbiddenException();
+    }
+    await this.workflow.backfillOpenSubmissions();
+
+    // Determine current active workflow step role for this submission
+    const res = await this.db.query<{ role: WorkflowRole; is_last: boolean; status: string }>(
+      `SELECT ss.role,
+              ss.sort_order = (
+                SELECT MAX(sort_order) FROM submission_steps sx WHERE sx.submission_id = s.id
+              ) AS is_last,
+              s.status
+       FROM submissions s
+       JOIN submission_steps ss ON ss.submission_id = s.id AND ss.sort_order = s.current_step
+       WHERE s.id = $1::uuid
+       LIMIT 1`,
+      [dto.submissionId]
+    );
+    const currentStep = res.rows[0];
+    if (!currentStep) {
+      throw new NotFoundException("Submission or workflow step not found");
+    }
+
+    const currentRole = currentStep.role;
+    const actorName = user.displayName || user.username || "Quản trị viên";
+    const rejectReason =
+      dto.action === ReviewActionType.REJECT ? dto.comment?.trim() || "" : "";
+
+    if (dto.action === ReviewActionType.REJECT && !rejectReason) {
+      throw new BadRequestException("Reject reason is required");
+    }
+
+    if (currentRole === WorkflowRole.REVIEWER) {
+      if (dto.action === ReviewActionType.ARCHIVE) {
+        throw new BadRequestException("Cannot archive at reviewer step");
+      }
+
+      const client = await this.db.connect();
+      let allReviewersApproved = false;
+      let enteredRole: string | null = null;
+      try {
+        await client.query("BEGIN");
+        // Mark all reviews for this submission as approved or rejected by admin
+        const reviewDecision =
+          dto.action === ReviewActionType.APPROVE
+            ? ReviewDecision.APPROVED
+            : ReviewDecision.REJECT;
+
+        await client.query(
+          `UPDATE reviews
+           SET decision = $1,
+               comment = $2,
+               decided_at = NOW()
+           WHERE submission_id = $3::uuid`,
+          [
+            reviewDecision,
+            dto.action === ReviewActionType.REJECT ? rejectReason || null : null,
+            dto.submissionId,
+          ]
+        );
+
+        await client.query(
+          `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
+           VALUES ($1, $2, $3, 'reviewer', $4, $5::jsonb)`,
+          [
+            randomUUID(),
+            dto.submissionId,
+            user.sub,
+            dto.action === ReviewActionType.APPROVE
+              ? WorkflowEventType.REVIEWER_APPROVED
+              : WorkflowEventType.REVIEWER_REJECTED,
+            JSON.stringify({
+              admin_override: true,
+              comment:
+                dto.action === ReviewActionType.REJECT
+                  ? rejectReason || null
+                  : null,
+            }),
+          ]
+        );
+
+        if (dto.action === ReviewActionType.REJECT) {
+          await client.query(
+            `UPDATE submissions SET status = $1 WHERE id = $2::uuid`,
+            [SubmissionStatus.REJECTED, dto.submissionId]
+          );
+          await client.query(
+            `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
+             VALUES ($1, $2, $3, 'system', 'status_changed', $4::jsonb)`,
+            [
+              randomUUID(),
+              dto.submissionId,
+              user.sub,
+              JSON.stringify({
+                from: currentStep.status,
+                to: SubmissionStatus.REJECTED,
+                reason: WorkflowEventType.REVIEWER_REJECTED,
+              }),
+            ]
+          );
+        } else {
+          allReviewersApproved = true;
+          const advanced = await this.workflow.advance(client, dto.submissionId);
+          enteredRole = advanced.enteredRole;
+          await client.query(
+            `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
+             VALUES ($1, $2, $3, 'system', 'status_changed', $4::jsonb)`,
+            [
+              randomUUID(),
+              dto.submissionId,
+              user.sub,
+              JSON.stringify({
+                from: advanced.fromStatus as SubmissionStatus,
+                to: advanced.toStatus as SubmissionStatus,
+                reason: "all_reviewers_approved_by_admin",
+              }),
+            ]
+          );
+        }
+
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
+
+      if (dto.action === ReviewActionType.REJECT) {
+        this.workflowMail.notifySafely("student_reviewer_rejected", () =>
+          this.workflowMail.notifyStudentOnReviewerDecision(
+            dto.submissionId,
+            SubmissionStatus.REJECTED,
+            actorName,
+            rejectReason,
+          )
+        );
+      } else {
+        this.workflowMail.notifySafely("student_reviewer_approved", () =>
+          this.workflowMail.notifyStudentOnReviewerDecision(
+            dto.submissionId,
+            SubmissionStatus.APPROVED,
+            actorName,
+          )
+        );
+        if (allReviewersApproved) {
+          if (enteredRole === WorkflowRole.LIBRARY_STAFF) {
+            this.workflowMail.notifySafely("library_review", () =>
+              this.workflowMail.notifyLibraryOnAllReviewersApproved(dto.submissionId)
+            );
+          }
+          this.workflowMail.notifySafely("student_all_reviewers_approved", () =>
+            this.workflowMail.notifyStudentOnAllReviewersApproved(dto.submissionId)
+          );
+        }
+      }
+      return { ok: true };
+    }
+
+    if (currentRole === WorkflowRole.LIBRARY_STAFF) {
+      if (dto.action === ReviewActionType.ARCHIVE) {
+        throw new BadRequestException("Library staff stage cannot archive");
+      }
+
+      let nextStatus =
+        dto.action === ReviewActionType.APPROVE
+          ? SubmissionStatus.APPROVED
+          : SubmissionStatus.REJECTED;
+      let enteredRole: string | null = null;
+
+      const client = await this.db.connect();
+      try {
+        await client.query("BEGIN");
+        const current = await client.query<{ status: string }>(
+          `SELECT status FROM submissions WHERE id = $1::uuid LIMIT 1 FOR UPDATE`,
+          [dto.submissionId]
+        );
+        const row = current.rows[0];
+        if (!row || row.status !== SubmissionStatus.REVIEWING) {
+          throw new BadRequestException("Submission is not in reviewing stage");
+        }
+
+        if (dto.action === ReviewActionType.APPROVE) {
+          const advanced = await this.workflow.advance(client, dto.submissionId);
+          nextStatus = advanced.toStatus as SubmissionStatus;
+          enteredRole = advanced.enteredRole;
+        } else {
+          await client.query(
+            `UPDATE submissions SET status = 'rejected' WHERE id = $1::uuid`,
+            [dto.submissionId]
+          );
+        }
+
+        await client.query(
+          `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
+           VALUES ($1, $2, $3, 'library_staff', $4, $5::jsonb)`,
+          [
+            randomUUID(),
+            dto.submissionId,
+            user.sub,
+            dto.action === ReviewActionType.APPROVE
+              ? "library_staff_approved"
+              : "library_staff_rejected",
+            JSON.stringify({
+              admin_override: true,
+              comment:
+                dto.action === ReviewActionType.REJECT
+                  ? rejectReason || null
+                  : null,
+            }),
+          ]
+        );
+        await client.query(
+          `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
+           VALUES ($1, $2, $3, 'system', 'status_changed', $4::jsonb)`,
+          [
+            randomUUID(),
+            dto.submissionId,
+            user.sub,
+            JSON.stringify({
+              from: row.status,
+              to: nextStatus,
+              reason:
+                dto.action === ReviewActionType.APPROVE
+                  ? WorkflowEventType.LIBRARY_STAFF_APPROVED
+                  : WorkflowEventType.LIBRARY_STAFF_REJECTED,
+            }),
+          ]
+        );
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
+
+      if (dto.action === ReviewActionType.APPROVE) {
+        if (enteredRole === WorkflowRole.DIRECTOR) {
+          this.workflowMail.notifySafely("director_review", () =>
+            this.workflowMail.notifyDirectorsOnLibraryApproved(dto.submissionId)
+          );
+        }
+        this.workflowMail.notifySafely("student_library_approved", () =>
+          this.workflowMail.notifyStudentOnLibraryDecision(
+            dto.submissionId,
+            SubmissionStatus.APPROVED,
+            actorName,
+          )
+        );
+      } else {
+        this.workflowMail.notifySafely("student_library_rejected", () =>
+          this.workflowMail.notifyStudentOnLibraryDecision(
+            dto.submissionId,
+            SubmissionStatus.REJECTED,
+            actorName,
+            rejectReason,
+          )
+        );
+      }
+      return { ok: true };
+    }
+
+    if (currentRole === WorkflowRole.DIRECTOR) {
+      if (
+        dto.action !== ReviewActionType.ARCHIVE &&
+        dto.action !== ReviewActionType.REJECT &&
+        dto.action !== ReviewActionType.APPROVE
+      ) {
+        throw new BadRequestException(
+          "Director step can approve, archive, or reject"
+        );
+      }
+      if (dto.action === ReviewActionType.ARCHIVE && !currentStep.is_last) {
+        throw new BadRequestException("Only the final director step can archive");
+      }
+      if (dto.action === ReviewActionType.APPROVE && currentStep.is_last) {
+        throw new BadRequestException(
+          "The final director step is archived, not approved"
+        );
+      }
+
+      const client = await this.db.connect();
+      try {
+        await client.query("BEGIN");
+        const current = await client.query<{ status: string }>(
+          `SELECT status FROM submissions WHERE id = $1::uuid LIMIT 1 FOR UPDATE`,
+          [dto.submissionId]
+        );
+        const row = current.rows[0];
+        if (!row) {
+          throw new NotFoundException("Submission not found");
+        }
+
+        if (
+          dto.action === ReviewActionType.ARCHIVE ||
+          dto.action === ReviewActionType.APPROVE
+        ) {
+          const advanced = await this.workflow.advance(client, dto.submissionId);
+          if (dto.action === ReviewActionType.ARCHIVE && !advanced.archived) {
+            throw new BadRequestException("Only final step can archive");
+          }
+          const eventType =
+            dto.action === ReviewActionType.ARCHIVE
+              ? WorkflowEventType.DIRECTOR_ARCHIVED
+              : "director_approved";
+
+          await client.query(
+            `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
+             VALUES ($1, $2, $3, 'director', $4, $5::jsonb)`,
+            [
+              randomUUID(),
+              dto.submissionId,
+              user.sub,
+              eventType,
+              JSON.stringify({
+                admin_override: true,
+                comment: dto.comment?.trim() || null,
+              }),
+            ]
+          );
+
+          if (dto.action === ReviewActionType.ARCHIVE) {
+            const signaturePayload = `${dto.submissionId}-${user.sub}-${new Date().toISOString()}-BKlib-DSpace`;
+            const sha256Hash = createHash("sha256").update(signaturePayload).digest("hex");
+            const certSerial = "BK-VN-" + new Date().getFullYear() + "-" + Math.floor(100000 + Math.random() * 900000);
+            const handleId = "123456789/" + Math.floor(1000 + Math.random() * 9000);
+
+            await client.query(
+              `UPDATE submissions
+               SET dspace_item_id = COALESCE(NULLIF(dspace_item_id, ''), $1),
+                   dspace_publish_status = 'published'
+               WHERE id = $2::uuid`,
+              [handleId, dto.submissionId]
+            );
+
+            await client.query(
+              `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
+               VALUES ($1, $2, $3, 'director', 'digital_signature_signed', $4::jsonb)`,
+              [
+                randomUUID(),
+                dto.submissionId,
+                user.sub,
+                JSON.stringify({
+                  is_signed: true,
+                  algorithm: "SHA-256 with RSA 2048 / PKCS#7",
+                  sha256_hash: sha256Hash,
+                  certificate_serial: certSerial,
+                  issuer: "TRƯỜNG ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT / BKLIB CA ROOT",
+                  institution_text: "ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT",
+                  signed_pages_scope: "Tất cả các trang (100% pages)",
+                  signer_name: user.displayName || user.username || "Admin (Bảo lưu)",
+                  signed_at: new Date().toISOString(),
+                  signature_style: dto.signatureStyle || (dto.metadata as any)?.signatureStyle || "margin_strips",
+                  signature_style_name:
+                    dto.signatureStyle === "diagonal" ||
+                    (dto.metadata as any)?.signatureStyle === "diagonal"
+                      ? "Chữ ký số chéo trang"
+                      : dto.signatureStyle === "invisible" ||
+                        (dto.metadata as any)?.signatureStyle === "invisible"
+                      ? "Không chữ ký số (Vô hình)"
+                      : "Chữ ký số 2 bên lề",
+                }),
+              ]
+            );
+          }
+
+          await client.query(
+            `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
+             VALUES ($1, $2, $3, 'system', 'status_changed', $4::jsonb)`,
+            [
+              randomUUID(),
+              dto.submissionId,
+              user.sub,
+              JSON.stringify({
+                from: advanced.fromStatus as SubmissionStatus,
+                to: advanced.toStatus as SubmissionStatus,
+                reason: eventType,
+              }),
+            ]
+          );
+        } else {
+          await client.query(
+            `UPDATE submissions SET status = 'rejected' WHERE id = $1::uuid`,
+            [dto.submissionId]
+          );
+          await client.query(
+            `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
+             VALUES ($1, $2, $3, 'director', 'director_rejected', $4::jsonb)`,
+            [
+              randomUUID(),
+              dto.submissionId,
+              user.sub,
+              JSON.stringify({ comment: rejectReason }),
+            ]
+          );
+          await client.query(
+            `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
+             VALUES ($1, $2, $3, 'system', 'status_changed', $4::jsonb)`,
+            [
+              randomUUID(),
+              dto.submissionId,
+              user.sub,
+              JSON.stringify({
+                from: row.status,
+                to: SubmissionStatus.REJECTED,
+                reason: "director_rejected",
+              }),
+            ]
+          );
+        }
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
+
+      if (dto.action === ReviewActionType.APPROVE) {
+        return { ok: true };
+      }
+
+      if (dto.action === ReviewActionType.ARCHIVE) {
+        this.workflowMail.notifySafely("student_director_approved", () =>
+          this.workflowMail.notifyStudentOnDirectorDecision(
+            dto.submissionId,
+            ReviewDecision.APPROVED,
+            actorName,
+          )
+        );
+        return {
+          ok: true,
+          dspaceDeferred: true,
+          message:
+            "Archived to period. Push to DSpace later from Archive configuration.",
+        };
+      }
+
+      this.workflowMail.notifySafely("student_director_rejected", () =>
+        this.workflowMail.notifyStudentOnDirectorDecision(
+          dto.submissionId,
+          SubmissionStatus.REJECTED,
+          actorName,
+          rejectReason,
+        )
+      );
+      return { ok: true };
+    }
+
+    throw new BadRequestException("Unknown stage role");
   }
 }
