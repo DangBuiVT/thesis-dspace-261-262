@@ -172,6 +172,10 @@ export class ReviewsService {
       throw new BadRequestException("Reviewers cannot archive submissions");
     }
 
+    if (dto.action === ReviewActionType.RETURN_TO_EDITOR) {
+      throw new BadRequestException("Only the director can return a submission to Editor");
+    }
+
     await this.workflow.assertCurrentRole(
       dto.submissionId,
       WorkflowRole.REVIEWER,
@@ -456,6 +460,10 @@ export class ReviewsService {
       throw new BadRequestException("Library staff cannot archive submissions");
     }
 
+    if (dto.action === ReviewActionType.RETURN_TO_EDITOR) {
+      throw new BadRequestException("Only the director can return a submission to Editor");
+    }
+
     const step = await this.workflow.assertCurrentRole(
       dto.submissionId,
       WorkflowRole.LIBRARY_STAFF,
@@ -481,12 +489,14 @@ export class ReviewsService {
     const client = await this.db.connect();
     try {
       await client.query("BEGIN");
-      const current = await client.query<{ status: string }>(
-        `SELECT status FROM submissions WHERE id = $1::uuid LIMIT 1 FOR UPDATE`,
+      const current = await client.query<{ status: string; current_step: number; active_role: string }>(
+        `SELECT s.status, s.current_step, ss.role AS active_role FROM submissions s
+         LEFT JOIN submission_steps ss ON ss.submission_id = s.id AND ss.sort_order = s.current_step
+         WHERE s.id = $1::uuid FOR UPDATE OF s`,
         [dto.submissionId],
       );
       const row = current.rows[0];
-      if (!row || row.status !== SubmissionStatus.REVIEWING) {
+      if (!row || row.status !== SubmissionStatus.REVIEWING || row.active_role !== WorkflowRole.LIBRARY_STAFF) {
         throw new BadRequestException("Submission is not in reviewing stage");
       }
 
@@ -577,11 +587,11 @@ export class ReviewsService {
     }
     if (
       dto.action !== ReviewActionType.ARCHIVE &&
-      dto.action !== ReviewActionType.REJECT &&
+      dto.action !== ReviewActionType.RETURN_TO_EDITOR &&
       dto.action !== ReviewActionType.APPROVE
     ) {
       throw new BadRequestException(
-        "Director can approve, archive, or reject the current step",
+        "Director can approve, archive, or return to Editor",
       );
     }
     const step = await this.workflow.assertCurrentRole(
@@ -598,27 +608,28 @@ export class ReviewsService {
     }
 
     const actorName = user.displayName || user.username;
-    const rejectReason =
-      dto.action === ReviewActionType.REJECT ? dto.comment?.trim() || "" : "";
-    if (dto.action === ReviewActionType.REJECT && !rejectReason) {
-      throw new BadRequestException("Reject reason is required");
+    const returnReason = dto.action === ReviewActionType.RETURN_TO_EDITOR ? dto.comment?.trim() || "" : "";
+    if (dto.action === ReviewActionType.RETURN_TO_EDITOR && !returnReason) {
+      throw new BadRequestException("Return reason is required");
     }
 
     const client = await this.db.connect();
     try {
       await client.query("BEGIN");
-      const current = await client.query<{ status: string }>(
-        `SELECT status FROM submissions WHERE id = $1::uuid LIMIT 1 FOR UPDATE`,
+      const current = await client.query<{ status: string; current_step: number; active_role: string }>(
+        `SELECT s.status, s.current_step, ss.role AS active_role FROM submissions s
+         LEFT JOIN submission_steps ss ON ss.submission_id = s.id AND ss.sort_order = s.current_step
+         WHERE s.id = $1::uuid FOR UPDATE OF s`,
         [dto.submissionId],
       );
       const row = current.rows[0];
       if (!row) {
         throw new NotFoundException("Submission not found");
       }
-      if (
+      if (row.active_role !== WorkflowRole.DIRECTOR || (
         row.status !== SubmissionStatus.APPROVED &&
         row.status !== SubmissionStatus.REVIEWING
-      ) {
+      )) {
         throw new BadRequestException(
           "This submission is not waiting for the director",
         );
@@ -707,33 +718,27 @@ export class ReviewsService {
           ],
         );
       } else {
+        const previous = await client.query<{ sort_order: number }>(
+          `SELECT sort_order FROM submission_steps WHERE submission_id = $1::uuid
+           AND sort_order < $2 AND role = 'library_staff' ORDER BY sort_order DESC LIMIT 1`,
+          [dto.submissionId, row.current_step],
+        );
+        if (!previous.rows[0]) throw new BadRequestException("No previous Editor step is available");
         await client.query(
-          `UPDATE submissions SET status = 'rejected' WHERE id = $1::uuid`,
-          [dto.submissionId],
+          `UPDATE submissions SET status = 'reviewing', current_step = $2 WHERE id = $1::uuid`,
+          [dto.submissionId, previous.rows[0].sort_order],
         );
         await client.query(
           `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
-           VALUES ($1, $2, $3, 'director', 'director_rejected', $4::jsonb)`,
-          [
-            randomUUID(),
-            dto.submissionId,
-            user.sub,
-            JSON.stringify({ comment: rejectReason }),
-          ],
+           VALUES ($1, $2, $3, 'director', 'director_returned', $4::jsonb)`,
+          [randomUUID(), dto.submissionId, user.sub, JSON.stringify({ comment: returnReason,
+            fromStep: row.current_step, toStep: previous.rows[0].sort_order })],
         );
         await client.query(
           `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
            VALUES ($1, $2, $3, 'system', 'status_changed', $4::jsonb)`,
-          [
-            randomUUID(),
-            dto.submissionId,
-            user.sub,
-            JSON.stringify({
-              from: row.status,
-              to: SubmissionStatus.REJECTED,
-              reason: "director_rejected",
-            }),
-          ],
+          [randomUUID(), dto.submissionId, user.sub, JSON.stringify({ from: row.status,
+            to: SubmissionStatus.REVIEWING, reason: "director_returned" })],
         );
       }
       await client.query("COMMIT");
@@ -764,13 +769,8 @@ export class ReviewsService {
       };
     }
 
-    this.workflowMail.notifySafely("student_director_rejected", () =>
-      this.workflowMail.notifyStudentOnDirectorDecision(
-        dto.submissionId,
-        SubmissionStatus.REJECTED,
-        actorName,
-        rejectReason,
-      ),
+    this.workflowMail.notifySafely("library_director_returned", () =>
+      this.workflowMail.notifyLibraryOnDirectorReturn(dto.submissionId, returnReason),
     );
     return { ok: true };
   }

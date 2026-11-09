@@ -1,0 +1,47 @@
+{
+  "verifiedAt": "2026-11-04T14:03:55.0993754Z",
+  "scope": "Frontend refactor; existing weeks 1-6 implementation preserved",
+  "architecture": {
+    "command": "npm --prefix frontend run check:architecture",
+    "passed": true,
+    "modules": 129,
+    "checks": [
+      "Local import resolution",
+      "Feature isolation",
+      "Application public entry points",
+      "Shared dependency direction",
+      "Shared HTTP transport",
+      "Import cycles"
+    ]
+  },
+  "build": {
+    "command": "npm --prefix frontend run build",
+    "passed": true,
+    "vite": "6.4.2",
+    "advisory": "Some chunks exceed 500 kB",
+    "mainChunkBytes": 1296406
+  },
+  "browser": {
+    "command": "npm run test:e2e",
+    "portal": "http://127.0.0.1:5174",
+    "api": "http://127.0.0.1:3001",
+    "passed": 9,
+    "failed": 0,
+    "report": "playwright-report.md",
+    "addedCoverage": "Administration/archive tabs and dialogs; logout and role state reset"
+  },
+  "before": {
+    "App": 3643,
+    "AdminPanel": 1722,
+    "LibraryArchivePanel": 2080
+  },
+  "after": {
+    "App": 1,
+    "PortalApp": 61,
+    "AdminPanel": 25,
+    "AdminWorkspace": 83,
+    "LibraryArchivePanel": 14,
+    "ArchiveWorkspace": 28
+  },
+  "backendAndSmtpRerun": false
+}

@@ -12,13 +12,42 @@ services:
     ports:
       - "5433:5432"
     volumes:
+      # PostgreSQL runs init scripts only when this persistent volume is empty.
       - pg_data:/var/lib/postgresql/data
-      - ./db/init:/docker-entrypoint-initdb.d
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # TCP becomes available after the first-time init scripts finish.
+      test:
+        [
+          "CMD-SHELL",
+          'pg_isready -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  backend-seed:
+    <<: *backend-image
+    container_name: thesis_seed
+    restart: "no"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      POSTGRES_DB: thesis_portal
+      POSTGRES_USER: thesis_user
+      POSTGRES_PASSWORD: thesis_pass
+    volumes:
+      # Same path as the API, so seeded PDFs can be previewed and downloaded.
+      - ./backend/uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Only a database marked by first-time init may receive automatic demo data.
+    command: ["node", "scripts/seed-demo.cjs", "--initial-only"]
 
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    <<: *backend-image
     container_name: thesis_backend
     restart: unless-stopped
     environment:
@@ -49,7 +78,10 @@ services:
       - /app/node_modules
       - ./backend/uploads:/app/uploads
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+      backend-seed:
+        condition: service_completed_successfully
     extra_hosts:
       - "host.docker.internal:host-gateway"
     command: npm run start:dev

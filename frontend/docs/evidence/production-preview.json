@@ -1,0 +1,13 @@
+{
+  "verifiedAt": "2026-11-04T13:09:20.195Z",
+  "target": "http://127.0.0.1:5176",
+  "nonblankPdfPage": true,
+  "pages": 2,
+  "workerResponses": [
+    {
+      "status": 200,
+      "contentType": "text/javascript"
+    }
+  ],
+  "pageErrors": []
+}
