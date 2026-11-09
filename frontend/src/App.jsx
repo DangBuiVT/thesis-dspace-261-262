@@ -408,6 +408,21 @@ function thesisFileListFromRecord(record) {
   ];
 }
 
+function hasPermission(user, permission) {
+  if (!user) return false;
+  if (user.role === "admin") return true;
+  if (Array.isArray(user.permissions)) {
+    return user.permissions.includes(permission);
+  }
+  // Fallbacks if permissions array has not yet populated from /api/auth/me
+  if (permission === "review_academic") return user.role === "reviewer";
+  if (permission === "library_intake") return user.role === "library_staff";
+  if (permission === "director_approval") return user.role === "director";
+  if (permission === "submit_thesis") return user.role === "student" || user.role === "admin";
+  if (permission === "view_all_submissions") return user.role === "admin" || user.role === "library_staff" || user.role === "director";
+  return false;
+}
+
 function canStaffDeleteSubmission(role) {
   return role === "admin" || role === "library_staff" || role === "director";
 }
@@ -710,6 +725,12 @@ function App() {
   const [directorRejectModalOpen, setDirectorRejectModalOpen] = useState(false);
   const [directorRejectTargetId, setDirectorRejectTargetId] = useState(null);
   const [directorRejectReason, setDirectorRejectReason] = useState("");
+  const [adminIntakeQueue, setAdminIntakeQueue] = useState([]);
+  const [isLoadingAdminIntakeQueue, setIsLoadingAdminIntakeQueue] = useState(false);
+  const [adminIntakeActionLoadingId, setAdminIntakeActionLoadingId] = useState(null);
+  const [adminRejectModalOpen, setAdminRejectModalOpen] = useState(false);
+  const [adminRejectTargetId, setAdminRejectTargetId] = useState(null);
+  const [adminRejectReason, setAdminRejectReason] = useState("");
   const [staffDetailRecord, setStaffDetailRecord] = useState(null);
   const [studentDetailRecord, setStudentDetailRecord] = useState(null);
   const [reviewerDetailRecord, setReviewerDetailRecord] = useState(null);
@@ -867,6 +888,11 @@ function App() {
   const directorFilteredQueue = useMemo(
     () => filterBySearchAndArchive(directorQueue, staffSearch, staffSemesterFilter, staffPeriodFilter),
     [directorQueue, staffSearch, staffSemesterFilter, staffPeriodFilter]
+  );
+
+  const adminIntakeFilteredQueue = useMemo(
+    () => filterBySearchAndArchive(adminIntakeQueue, staffSearch, staffSemesterFilter, staffPeriodFilter),
+    [adminIntakeQueue, staffSearch, staffSemesterFilter, staffPeriodFilter]
   );
 
   const reviewerNeedMyDecision = useMemo(
@@ -1521,6 +1547,26 @@ function App() {
     }
   };
 
+  const loadAdminIntakeQueue = async () => {
+    setIsLoadingAdminIntakeQueue(true);
+    try {
+      const response = await fetch("/api/reviews/admin-intake-queue", {
+        headers: {
+          ...authHeaders(auth?.token)
+        }
+      });
+      const payload = await parseResponse(response);
+      if (!response.ok || !Array.isArray(payload)) {
+        throw new Error("Unable to load admin intake queue");
+      }
+      setAdminIntakeQueue(payload);
+    } catch (error) {
+      message.error(tr(error.message || "Unable to load admin intake queue"));
+    } finally {
+      setIsLoadingAdminIntakeQueue(false);
+    }
+  };
+
   const loadStudentSubmissions = async (studentId) => {
     setIsLoadingSubmissions(true);
     try {
@@ -1571,18 +1617,25 @@ function App() {
   };
 
   useEffect(() => {
-    if (auth?.user?.role === "student" && auth?.user?.id) {
-      void loadStudentSubmissions(auth.user.id);
-    }
-    const role = auth?.user?.role;
-    if (role === "library_staff" || role === "director" || role === "admin") {
-      void loadStaffSubmissions();
-    }
-    if (role === "library_staff") {
-      void loadLibraryQueue();
-    }
-    if (role === "director") {
-      void loadDirectorQueue();
+    if (auth?.user) {
+      if (auth.user.role === "student" && auth.user.id) {
+        void loadStudentSubmissions(auth.user.id);
+      }
+      if (hasPermission(auth.user, "view_all_submissions")) {
+        void loadStaffSubmissions();
+      }
+      if (auth.user.role === "admin") {
+        void loadAdminIntakeQueue();
+      }
+      if (hasPermission(auth.user, "library_intake")) {
+        void loadLibraryQueue();
+      }
+      if (hasPermission(auth.user, "director_approval")) {
+        void loadDirectorQueue();
+      }
+      if (hasPermission(auth.user, "review_academic")) {
+        void loadReviewerQueue();
+      }
     }
   }, [auth]);
 
@@ -1606,11 +1659,7 @@ function App() {
     }
   };
 
-  useEffect(() => {
-    if (auth?.user?.role === "reviewer") {
-      void loadReviewerQueue();
-    }
-  }, [auth]);
+  // loadReviewerQueue is handled in the unified useEffect above
 
   const loadReviewers = async () => {
     setIsLoadingReviewers(true);
@@ -2758,6 +2807,57 @@ function App() {
     setLibraryRejectReason("");
   };
 
+  const submitAdminIntakeAction = async (submissionId, action, comment) => {
+    setAdminIntakeActionLoadingId(submissionId);
+    try {
+      const body = {
+        submissionId,
+        action,
+        comment,
+        signatureStyle: localStorage.getItem("bklib_signature_style") || "margin_strips"
+      };
+      const response = await fetch("/api/reviews/admin-intake-action", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders(auth.token)
+        },
+        body: JSON.stringify(body)
+      });
+      const payload = await parseResponse(response);
+      if (!response.ok) {
+        throw new Error(payload?.message || "Action failed");
+      }
+      message.success(action === "reject" ? t("Rejected") : (action === "archive" ? t("Submission archived") : t("Approved")));
+      await Promise.all([
+        loadAdminIntakeQueue(),
+        loadStaffSubmissions()
+      ]);
+    } catch (error) {
+      message.error(tr(error.message || "Action failed"));
+    } finally {
+      setAdminIntakeActionLoadingId(null);
+    }
+  };
+
+  const openAdminRejectModal = (submissionId) => {
+    setAdminRejectTargetId(submissionId);
+    setAdminRejectReason("");
+    setAdminRejectModalOpen(true);
+  };
+
+  const confirmAdminReject = async () => {
+    if (!adminRejectTargetId) return;
+    if (!adminRejectReason.trim()) {
+      message.error(t("Please enter a reject reason"));
+      return;
+    }
+    setAdminRejectModalOpen(false);
+    await submitAdminIntakeAction(adminRejectTargetId, "reject", adminRejectReason.trim());
+    setAdminRejectTargetId(null);
+    setAdminRejectReason("");
+  };
+
   const buildDirectorArchiveColumns = (loadingId, onArchive, onApprove, onReject) => [
     {
       title: t("Title"),
@@ -3698,57 +3798,6 @@ function App() {
               <Text>{greeting}</Text>
               {auth.user.role === "student" ? (
                 renderThesisEntryWorkspace()
-              ) : auth.user.role === "reviewer" ? (
-                <>
-                  <Paragraph type="secondary">{t("Review all theses where you are assigned as advisor/reviewer. Use search and grouped queues.")}</Paragraph>
-                  <Divider style={{ margin: "8px 0" }} />
-                  <Space style={{ width: "100%", justifyContent: "space-between" }}>
-                    <Title level={5} style={{ margin: 0 }}>{t("Reviewer Workspace")}</Title>
-                    <Button onClick={() => loadReviewerQueue()} loading={isLoadingReviewerQueue}>{t("Refresh")}</Button>
-                  </Space>
-                  {renderSearchArchiveFilters({
-                    search: reviewerSearch,
-                    onSearch: setReviewerSearch,
-                    semester: reviewerSemesterFilter,
-                    onSemester: setReviewerSemesterFilter,
-                    period: reviewerPeriodFilter,
-                    onPeriod: setReviewerPeriodFilter,
-                    items: reviewerQueue
-                  })}
-                  <Title level={5} style={{ margin: "8px 0 0" }}>
-                    {t("Need My Review ({{count}})", { count: reviewerNeedMyDecision.length })}
-                  </Title>
-                  <Table
-                    rowKey="id"
-                    dataSource={reviewerNeedMyDecision}
-                    columns={reviewerQueueColumns}
-                    loading={isLoadingReviewerQueue}
-                    pagination={{ pageSize: 5 }}
-                    scroll={{ x: 1320 }}
-                  />
-                  <Title level={5} style={{ margin: "8px 0 0" }}>
-                    {t("I Approved ({{count}})", { count: reviewerApproved.length })}
-                  </Title>
-                  <Table
-                    rowKey="id"
-                    dataSource={reviewerApproved}
-                    columns={reviewerQueueColumns}
-                    loading={isLoadingReviewerQueue}
-                    pagination={{ pageSize: 5 }}
-                    scroll={{ x: 1320 }}
-                  />
-                  <Title level={5} style={{ margin: "8px 0 0" }}>
-                    {t("I Rejected ({{count}})", { count: reviewerRejected.length })}
-                  </Title>
-                  <Table
-                    rowKey="id"
-                    dataSource={reviewerRejected}
-                    columns={reviewerQueueColumns}
-                    loading={isLoadingReviewerQueue}
-                    pagination={{ pageSize: 5 }}
-                    scroll={{ x: 1320 }}
-                  />
-                </>
               ) : auth.user.role === "admin" ? (
                 <Tabs
                   activeKey={adminDashTab}
@@ -3830,14 +3879,191 @@ function App() {
                       key: "archive",
                       label: t("Archive configuration"),
                       children: <LibraryArchivePanel auth={auth} readOnly={false} canManage />
+                    },
+                    {
+                      key: "intake",
+                      label: t("Intake"),
+                      children: (
+                        <>
+                          <Paragraph type="secondary">
+                            {t("Admin Intake Hub:")} Cho phép Quản trị viên duyệt hồ sơ ở cả 3 cấp độ (Reviewer / Giảng viên hướng dẫn, Thư viện tiếp nhận, Ban giám hiệu phê duyệt/lưu chiểu).
+                          </Paragraph>
+                          {renderSearchArchiveFilters({
+                            search: staffSearch,
+                            onSearch: setStaffSearch,
+                            semester: staffSemesterFilter,
+                            onSemester: setStaffSemesterFilter,
+                            period: staffPeriodFilter,
+                            onPeriod: setStaffPeriodFilter,
+                            items: adminIntakeQueue
+                          })}
+                          <Divider style={{ margin: "12px 0" }} />
+                          <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 12 }}>
+                            <Title level={5} style={{ margin: 0 }}>
+                              {t("Danh sách hồ sơ chờ duyệt (Tất cả giai đoạn)")} ({adminIntakeFilteredQueue.length})
+                            </Title>
+                            <Button onClick={() => loadAdminIntakeQueue()} loading={isLoadingAdminIntakeQueue}>
+                              {t("Refresh")}
+                            </Button>
+                          </Space>
+                          <Table
+                            rowKey="id"
+                            dataSource={adminIntakeFilteredQueue}
+                            loading={isLoadingAdminIntakeQueue}
+                            pagination={{ pageSize: 8 }}
+                            scroll={{ x: 1400 }}
+                            columns={[
+                              {
+                                title: t("Title"),
+                                dataIndex: "title",
+                                key: "title",
+                                width: 220,
+                                ellipsis: true
+                              },
+                              {
+                                title: t("Submitter"),
+                                key: "submitter",
+                                width: 160,
+                                ellipsis: true,
+                                render: (_v, r) => r.submitter || r.submitter_username || "—"
+                              },
+                              {
+                                title: t("Stage / Role"),
+                                key: "stage",
+                                width: 160,
+                                render: (_v, r) => {
+                                  const role = r.current_step_role;
+                                  if (role === "reviewer") return <Tag color="blue">{t("Reviewer / GVHD")}</Tag>;
+                                  if (role === "library_staff") return <Tag color="cyan">{t("Thư viện (Intake)")}</Tag>;
+                                  if (role === "director") return <Tag color="purple">{r.current_step_is_last ? t("Lãnh đạo (Lưu chiểu)") : t("Lãnh đạo (Duyệt)")}</Tag>;
+                                  return <Tag>{role || "—"}</Tag>;
+                                }
+                              },
+                              {
+                                title: t("Status"),
+                                dataIndex: "submission_status",
+                                key: "submission_status",
+                                width: 120,
+                                render: (status) => <Tag color={thesisStatusColor(status)}>{statusText(status, t)}</Tag>
+                              },
+                              {
+                                title: t("Submitted At"),
+                                dataIndex: "created_at",
+                                key: "created_at",
+                                width: 160,
+                                render: (createdAt) => formatDateTime(createdAt, lang)
+                              },
+                              {
+                                title: t("Actions"),
+                                key: "actions",
+                                width: 320,
+                                render: (_value, record) => {
+                                  const isLastDirector = record.current_step_role === "director" && record.current_step_is_last;
+                                  const approveTitle = isLastDirector
+                                    ? t("Lưu chiểu & Ký số")
+                                    : (record.current_step_role === "reviewer"
+                                      ? t("Duyệt (Reviewer)")
+                                      : (record.current_step_role === "library_staff"
+                                        ? t("Tiếp nhận (Thư viện)")
+                                        : t("Phê duyệt")));
+
+                                  return (
+                                    <Space>
+                                      <Button type="link" size="small" onClick={() => openQueueSubmissionDetail(record)}>
+                                        {t("Detail")}
+                                      </Button>
+                                      <Button
+                                        type="primary"
+                                        loading={adminIntakeActionLoadingId === record.id}
+                                        onClick={() => {
+                                          if (isLastDirector) {
+                                            void submitAdminIntakeAction(record.id, "archive");
+                                          } else {
+                                            void submitAdminIntakeAction(record.id, "approve");
+                                          }
+                                        }}
+                                      >
+                                        {approveTitle}
+                                      </Button>
+                                      <Button
+                                        danger
+                                        loading={adminIntakeActionLoadingId === record.id}
+                                        onClick={() => openAdminRejectModal(record.id)}
+                                      >
+                                        {t("Reject")}
+                                      </Button>
+                                    </Space>
+                                  );
+                                }
+                              }
+                            ]}
+                          />
+                        </>
+                      )
                     }
                   ]}
                 />
-              ) : auth.user.role === "library_staff" || auth.user.role === "director" ? (
+              ) : auth.user.role === "reviewer" || auth.user.role === "library_staff" || auth.user.role === "director" ? (
                 <Tabs
-                  defaultActiveKey="workflow"
+                  defaultActiveKey={hasPermission(auth.user, "review_academic") ? "reviewer" : "workflow"}
                   items={[
-                    {
+                    ...(hasPermission(auth.user, "review_academic") ? [{
+                      key: "reviewer",
+                      label: t("Reviewer Workspace"),
+                      children: (
+                        <>
+                          <Paragraph type="secondary">{t("Review all theses where you are assigned as advisor/reviewer. Use search and grouped queues.")}</Paragraph>
+                          <Divider style={{ margin: "8px 0" }} />
+                          <Space style={{ width: "100%", justifyContent: "space-between" }}>
+                            <Title level={5} style={{ margin: 0 }}>{t("Reviewer Workspace")}</Title>
+                            <Button onClick={() => loadReviewerQueue()} loading={isLoadingReviewerQueue}>{t("Refresh")}</Button>
+                          </Space>
+                          {renderSearchArchiveFilters({
+                            search: reviewerSearch,
+                            onSearch: setReviewerSearch,
+                            semester: reviewerSemesterFilter,
+                            onSemester: setReviewerSemesterFilter,
+                            period: reviewerPeriodFilter,
+                            onPeriod: setReviewerPeriodFilter,
+                            items: reviewerQueue
+                          })}
+                          <Title level={5} style={{ margin: "8px 0 0" }}>
+                            {t("Need My Review ({{count}})", { count: reviewerNeedMyDecision.length })}
+                          </Title>
+                          <Table
+                            rowKey="id"
+                            dataSource={reviewerNeedMyDecision}
+                            columns={reviewerQueueColumns}
+                            loading={isLoadingReviewerQueue}
+                            pagination={{ pageSize: 5 }}
+                            scroll={{ x: 1320 }}
+                          />
+                          <Title level={5} style={{ margin: "8px 0 0" }}>
+                            {t("I Approved ({{count}})", { count: reviewerApproved.length })}
+                          </Title>
+                          <Table
+                            rowKey="id"
+                            dataSource={reviewerApproved}
+                            columns={reviewerQueueColumns}
+                            loading={isLoadingReviewerQueue}
+                            pagination={{ pageSize: 5 }}
+                            scroll={{ x: 1320 }}
+                          />
+                          <Title level={5} style={{ margin: "8px 0 0" }}>
+                            {t("I Rejected ({{count}})", { count: reviewerRejected.length })}
+                          </Title>
+                          <Table
+                            rowKey="id"
+                            dataSource={reviewerRejected}
+                            columns={reviewerQueueColumns}
+                            loading={isLoadingReviewerQueue}
+                            pagination={{ pageSize: 5 }}
+                            scroll={{ x: 1320 }}
+                          />
+                        </>
+                      )
+                    }] : []),
+                    ...((hasPermission(auth.user, "library_intake") || hasPermission(auth.user, "director_approval") || hasPermission(auth.user, "view_all_submissions")) ? [{
                       key: "workflow",
                       label: auth.user.role === "director" ? t("Approval workflow") : t("Intake & submissions"),
                       children: (
@@ -3855,7 +4081,7 @@ function App() {
                             onPeriod: setStaffPeriodFilter,
                             items: staffFilterSource
                           })}
-                          {auth.user.role === "library_staff" && (
+                          {hasPermission(auth.user, "library_intake") && (
                             <>
                               <Divider style={{ margin: "8px 0" }} />
                               <Space style={{ width: "100%", justifyContent: "space-between" }}>
@@ -3877,7 +4103,7 @@ function App() {
                               />
                             </>
                           )}
-                          {auth.user.role === "director" && (
+                          {hasPermission(auth.user, "director_approval") && (
                             <>
                               <Divider style={{ margin: "8px 0" }} />
                               <Space style={{ width: "100%", justifyContent: "space-between" }}>
@@ -3906,43 +4132,47 @@ function App() {
                               />
                             </>
                           )}
-                          <Divider style={{ margin: "8px 0" }} />
-                          <Space style={{ width: "100%", justifyContent: "space-between" }}>
-                            <Title level={5} style={{ margin: 0 }}>{t("All submissions")}</Title>
-                            <Space>
-                              <Button icon={<DownloadOutlined />} onClick={exportAllSubmissions}>{t("Export submissions")}</Button>
-                              <Button
-                                onClick={() => {
-                                  void loadStaffSubmissions();
-                                  if (auth.user.role === "library_staff") {
-                                    void loadLibraryQueue();
-                                  }
-                                  if (auth.user.role === "director") {
-                                    void loadDirectorQueue();
-                                  }
-                                }}
-                                loading={
-                                  isLoadingSubmissions || isLoadingLibraryQueue || isLoadingDirectorQueue
-                                }
-                              >{t("Refresh")}</Button>
-                            </Space>
-                          </Space>
-                          <Table
-                            rowKey="id"
-                            dataSource={staffFilteredSubmissions}
-                            columns={adminSubmissionColumns}
-                            loading={isLoadingSubmissions}
-                            pagination={{ pageSize: 8 }}
-                            scroll={{ x: 1400 }}
-                            onRow={(record) => ({
-                              onClick: () => setStaffDetailRecord(record),
-                              style: { cursor: "pointer" }
-                            })}
-                          />
+                          {hasPermission(auth.user, "view_all_submissions") && (
+                            <>
+                              <Divider style={{ margin: "8px 0" }} />
+                              <Space style={{ width: "100%", justifyContent: "space-between" }}>
+                                <Title level={5} style={{ margin: 0 }}>{t("All submissions")}</Title>
+                                <Space>
+                                  <Button icon={<DownloadOutlined />} onClick={exportAllSubmissions}>{t("Export submissions")}</Button>
+                                  <Button
+                                    onClick={() => {
+                                      void loadStaffSubmissions();
+                                      if (hasPermission(auth.user, "library_intake")) {
+                                        void loadLibraryQueue();
+                                      }
+                                      if (hasPermission(auth.user, "director_approval")) {
+                                        void loadDirectorQueue();
+                                      }
+                                    }}
+                                    loading={
+                                      isLoadingSubmissions || isLoadingLibraryQueue || isLoadingDirectorQueue
+                                    }
+                                  >{t("Refresh")}</Button>
+                                </Space>
+                              </Space>
+                              <Table
+                                rowKey="id"
+                                dataSource={staffFilteredSubmissions}
+                                columns={adminSubmissionColumns}
+                                loading={isLoadingSubmissions}
+                                pagination={{ pageSize: 8 }}
+                                scroll={{ x: 1400 }}
+                                onRow={(record) => ({
+                                  onClick: () => setStaffDetailRecord(record),
+                                  style: { cursor: "pointer" }
+                                })}
+                              />
+                            </>
+                          )}
                         </>
                       )
-                    },
-                    {
+                    }] : []),
+                    ...((auth.user.role === "library_staff" || auth.user.role === "director") ? [{
                       key: "archive",
                       label: t("Archive configuration"),
                       children: (
@@ -3952,7 +4182,7 @@ function App() {
                           canManage={auth.user.role === "library_staff" || auth.user.role === "admin"}
                         />
                       )
-                    }
+                    }] : [])
                   ]}
                 />
               ) : (
@@ -4468,6 +4698,25 @@ function App() {
           rows={4}
           value={directorRejectReason}
           onChange={(event) => setDirectorRejectReason(event.target.value)}
+        />
+      </Modal>
+      <Modal
+        title={t("Reject thesis (Admin Intake)")}
+        open={adminRejectModalOpen}
+        onOk={confirmAdminReject}
+        onCancel={() => {
+          setAdminRejectModalOpen(false);
+          setAdminRejectTargetId(null);
+          setAdminRejectReason("");
+        }}
+        okText={t("Reject")}
+        okButtonProps={{ danger: true }}
+      >
+        <Paragraph type="secondary">{t("Please provide a clear reason for rejection.")}</Paragraph>
+        <TextArea
+          rows={4}
+          value={adminRejectReason}
+          onChange={(event) => setAdminRejectReason(event.target.value)}
         />
       </Modal>
       <Modal

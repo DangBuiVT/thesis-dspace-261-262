@@ -7,6 +7,7 @@ import {
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { AdminSettingsService } from "../admin/admin-settings.service";
+import { PermissionsService } from "../users/permissions.service";
 import { ChangePasswordDto } from "./dto/change-password.dto";
 import { LoginDto } from "./dto/login.dto";
 import { RegisterDto } from "./dto/register.dto";
@@ -21,7 +22,8 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly adminSettingsService: AdminSettingsService,
-    private readonly googleAuthService: GoogleAuthService
+    private readonly googleAuthService: GoogleAuthService,
+    private readonly permissionsService: PermissionsService
   ) { }
 
   async getLoginOptions() {
@@ -123,7 +125,7 @@ export class AuthService {
         })) || existing;
 
       await this.assertUserMaySignIn(user);
-      const { access_token } = this.sessionResponse(user);
+      const { access_token } = await this.sessionResponse(user);
       return `${frontend}/?access_token=${encodeURIComponent(access_token)}`;
     } catch (error) {
       if (error instanceof UnauthorizedException) {
@@ -188,8 +190,8 @@ export class AuthService {
     }
   }
 
-  private sessionResponse(user: UserRecord) {
-    const publicUser = this.publicUser(user);
+  private async sessionResponse(user: UserRecord) {
+    const publicUser = await this.publicUser(user);
     const accessToken = this.jwtService.sign({
       sub: user.username,
       username: user.username,
@@ -203,7 +205,8 @@ export class AuthService {
     };
   }
 
-  private publicUser(user: UserRecord) {
+  private async publicUser(user: UserRecord) {
+    const permissions = Array.from(await this.permissionsService.getAllowedPermissions(user.role));
     return {
       id: user.id,
       username: user.username,
@@ -212,7 +215,8 @@ export class AuthService {
       email: user.email,
       facultyId: user.facultyId,
       facultyName: user.facultyName,
-      hasPassword: Boolean(user.password)
+      hasPassword: Boolean(user.password),
+      permissions
     };
   }
 }
