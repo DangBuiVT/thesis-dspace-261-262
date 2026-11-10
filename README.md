@@ -65,6 +65,7 @@ docker compose up --build
 | Giao diện | http://localhost:5173 |
 | API | http://localhost:3000 |
 | Kiểm tra API | http://localhost:3000/health |
+| Swagger UI | http://localhost:3000/docs |
 | Mailpit (hộp thư local) | http://localhost:8025 |
 | Postgres | `localhost:5433` (user `thesis_user`, db `thesis_portal`, mật khẩu `thesis_pass`) |
 

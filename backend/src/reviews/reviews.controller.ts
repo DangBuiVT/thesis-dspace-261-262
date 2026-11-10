@@ -1,3 +1,4 @@
+import { ApiBearerAuth } from "@nestjs/swagger";
 import { Body, Controller, Get, Post, Req, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { PermissionsGuard } from "../auth/permissions.guard";
@@ -6,6 +7,7 @@ import type { JwtPayload } from "../auth/jwt.strategy";
 import { ReviewActionDto } from "./dto/review-action.dto";
 import { ReviewsService } from "./reviews.service";
 
+@ApiBearerAuth()
 @Controller("reviews")
 export class ReviewsController {
   constructor(private readonly reviewsService: ReviewsService) {}

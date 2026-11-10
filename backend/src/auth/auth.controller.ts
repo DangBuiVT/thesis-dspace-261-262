@@ -1,11 +1,13 @@
 import { Body, Controller, Get, HttpCode, Post, Query, Req, Res, UseGuards } from "@nestjs/common";
 import type { Response } from "express";
+import { ApiBearerAuth, ApiOperation, ApiTags, ApiUnauthorizedResponse } from "@nestjs/swagger";
 import { AuthService } from "./auth.service";
 import { ChangePasswordDto } from "./dto/change-password.dto";
 import { LoginDto } from "./dto/login.dto";
 import { JwtAuthGuard } from "./jwt-auth.guard";
 import type { JwtPayload } from "./jwt.strategy";
 
+@ApiTags("Auth")
 @Controller("auth")
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
@@ -16,17 +18,21 @@ export class AuthController {
   }
 
   @Post("login")
+  @ApiOperation({ summary: "Đăng nhập để lấy access_token", description: "Sao chép access_token trong phản hồi vào nút Authorize của Swagger." })
   async login(@Body() body: LoginDto) {
     return this.authService.login(body);
   }
 
   @Get("me")
+  @ApiBearerAuth()
+  @ApiUnauthorizedResponse({ description: "JWT không hợp lệ" })
   @UseGuards(JwtAuthGuard)
   me(@Req() req: { user: JwtPayload }) {
     return this.authService.me(req.user.sub);
   }
 
   @Post("change-password")
+  @ApiBearerAuth()
   @HttpCode(200)
   @UseGuards(JwtAuthGuard)
   changePassword(@Req() req: { user: JwtPayload }, @Body() body: ChangePasswordDto) {

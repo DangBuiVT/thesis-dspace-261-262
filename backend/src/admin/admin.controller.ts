@@ -1,3 +1,4 @@
+import { ApiBearerAuth } from "@nestjs/swagger";
 import {
   BadRequestException,
   Body,
@@ -38,6 +39,7 @@ import { SaveWorkflowDto } from "../workflow/dto/save-workflow.dto";
 import { GroupsService } from "../workflow/groups.service";
 import { WorkflowService } from "../workflow/workflow.service";
 
+@ApiBearerAuth()
 @Controller("admin")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class AdminController {

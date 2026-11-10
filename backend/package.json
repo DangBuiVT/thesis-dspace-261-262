@@ -17,6 +17,7 @@
     "@nestjs/jwt": "^10.2.0",
     "@nestjs/passport": "^10.0.3",
     "@nestjs/platform-express": "^10.4.12",
+    "@nestjs/swagger": "^7.4.2",
     "@types/multer": "^2.1.0",
     "@types/pg": "^8.20.0",
     "class-transformer": "^0.5.1",
