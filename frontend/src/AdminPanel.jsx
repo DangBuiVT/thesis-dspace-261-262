@@ -1450,13 +1450,13 @@ export default function AdminPanel({
                   <div style={{ position: "absolute", left: 2, top: 10, bottom: 10, width: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>
                     <div style={{ writingMode: "vertical-rl", transform: "rotate(180deg)", display: "flex", alignItems: "center", gap: 3, fontSize: 7, fontWeight: "bold", color: "#595959", opacity: 0.6, letterSpacing: 0.5, whiteSpace: "nowrap" }}>
                       <img src="/hcmut_nobg.png" alt="" style={{ width: 9, height: 9, transform: "rotate(90deg)", filter: "grayscale(1)" }} />
-                      Truong Dai hoc Bach Khoa - HCMUT
+                      TRƯỜNG ĐẠI HỌC BÁCH KHOA - HCMUT
                     </div>
                   </div>
                   <div style={{ position: "absolute", right: 2, top: 10, bottom: 10, width: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>
                     <div style={{ writingMode: "vertical-rl", display: "flex", alignItems: "center", gap: 3, fontSize: 7, fontWeight: "bold", color: "#595959", opacity: 0.6, letterSpacing: 0.5, whiteSpace: "nowrap" }}>
                       <img src="/hcmut_nobg.png" alt="" style={{ width: 9, height: 9, transform: "rotate(90deg)", filter: "grayscale(1)" }} />
-                      Truong Dai hoc Bach Khoa - HCMUT
+                      TRƯỜNG ĐẠI HỌC BÁCH KHOA - HCMUT
                     </div>
                   </div>
                 </>

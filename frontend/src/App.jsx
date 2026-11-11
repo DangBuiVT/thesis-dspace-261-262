@@ -13,6 +13,7 @@ import {
   Row,
   Select,
   Space,
+  Switch,
   Table,
   Tabs,
   Tag,
@@ -63,6 +64,8 @@ s4t5u6v7w8x9y0z1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5
 -----END RSA PRIVATE KEY-----`;
 
 const STORAGE_KEY = "thesis_portal_auth";
+// Giá trị đặc biệt trong ô Khoa (Admin): khoa không có trong danh sách, nhập tay
+const OTHER_FACULTY_VALUE = "__other__";
 const BRAND_SECONDARY = "#132d65";
 const LOGO_PATH = "/images/01_logobachkhoatoi.png";
 const { Header, Content } = Layout;
@@ -927,20 +930,33 @@ function App() {
   const archiveSemesterId = Form.useWatch("archiveSemesterId", submissionForm);
   const watchedStudentId = Form.useWatch("studentId", submissionForm);
   const isAdminActor = auth?.user?.role === "admin";
+  // Admin: khoa riêng cho bài nộp ("Khác" = nhập tay) và bật/tắt từng bước duyệt
+  const isOtherFaculty = isAdminActor && archiveFacultyId === OTHER_FACULTY_VALUE;
+  const watchedWorkflowReviewer = Form.useWatch("workflowReviewer", submissionForm);
+  const watchedWorkflowLibrary = Form.useWatch("workflowLibrary", submissionForm);
+  const watchedWorkflowDirector = Form.useWatch("workflowDirector", submissionForm);
+  const reviewerStepOff = isAdminActor && watchedWorkflowReviewer === false;
+  const noReviewStepsSelected =
+    isAdminActor &&
+    watchedWorkflowReviewer === false &&
+    watchedWorkflowLibrary === false &&
+    watchedWorkflowDirector === false;
   const facultySelectOptions = useMemo(() => {
     const locked = isAdminActor
       ? studentOptions.find((item) => item.value === watchedStudentId)
       : auth?.user?.facultyId
         ? { facultyId: auth.user.facultyId, facultyName: auth.user.facultyName }
         : null;
+    const withOther = (list) =>
+      isAdminActor ? [...list, { value: OTHER_FACULTY_VALUE, label: t("Other (enter faculty name)") }] : list;
     if (!locked?.facultyId) {
-      return archiveFaculties;
+      return withOther(archiveFaculties);
     }
     if (archiveFaculties.some((item) => item.value === locked.facultyId)) {
-      return archiveFaculties;
+      return withOther(archiveFaculties);
     }
-    return [{ value: locked.facultyId, label: locked.facultyName || locked.facultyId }, ...archiveFaculties];
-  }, [archiveFaculties, auth?.user?.facultyId, auth?.user?.facultyName, isAdminActor, studentOptions, watchedStudentId]);
+    return withOther([{ value: locked.facultyId, label: locked.facultyName || locked.facultyId }, ...archiveFaculties]);
+  }, [t, archiveFaculties, auth?.user?.facultyId, auth?.user?.facultyName, isAdminActor, studentOptions, watchedStudentId]);
   const actingStudentId = isAdminActor ? watchedStudentId : auth?.user?.id;
 
   const configurableFormFields = useMemo(
@@ -1760,7 +1776,7 @@ function App() {
   const loadArchiveFaculties = async () => {
     setIsLoadingArchiveFaculties(true);
     try {
-      const response = await fetch("/api/archive/faculties", {
+      const response = await fetch(auth?.user?.role === "admin" ? "/api/archive/admin/faculties" : "/api/archive/faculties", {
         headers: { ...authHeaders(auth?.token) }
       });
       const payload = await parseResponse(response);
@@ -1807,15 +1823,22 @@ function App() {
       return DEFAULT_SEMESTER_OPTIONS;
     }
     setIsLoadingArchiveSemesters(true);
+    const asAdmin = auth?.user?.role === "admin";
     try {
-      const response = await fetch(`/api/archive/faculties/${facultyId}/semesters`, {
-        headers: { ...authHeaders(auth?.token) }
-      });
+      const response = await fetch(
+        asAdmin ? `/api/archive/admin/faculties/${facultyId}/semesters` : `/api/archive/faculties/${facultyId}/semesters`,
+        { headers: { ...authHeaders(auth?.token) } }
+      );
       const payload = await parseResponse(response);
       let options = (Array.isArray(payload) ? payload : []).map((item) => ({
         value: item.id,
         label: item.name
       }));
+      if (asAdmin) {
+        // Admin thấy đúng dữ liệu thật của khoa đã chọn (kể cả rỗng), không dùng danh sách mẫu
+        setArchiveSemesters(options);
+        return options;
+      }
       if (options.length === 0) {
         options = DEFAULT_SEMESTER_OPTIONS;
       }
@@ -1831,12 +1854,18 @@ function App() {
 
   const loadArchivePeriods = async (facultyId, semesterId) => {
     setIsLoadingArchivePeriods(true);
+    const asAdmin = auth?.user?.role === "admin";
     try {
       const response = await fetch(
-        `/api/archive/submission-periods?facultyId=${encodeURIComponent(facultyId || "")}&semesterId=${encodeURIComponent(semesterId || "")}`,
+        `/api/archive/${asAdmin ? "admin/" : ""}submission-periods?facultyId=${encodeURIComponent(facultyId || "")}&semesterId=${encodeURIComponent(semesterId || "")}`,
         { headers: { ...authHeaders(auth?.token) } }
       );
       const payload = await parseResponse(response);
+      if (asAdmin) {
+        const list = Array.isArray(payload) ? payload : [];
+        setArchivePeriods(list);
+        return list;
+      }
       let periods = Array.isArray(payload) && payload.length > 0 ? payload : DEFAULT_PERIOD_OPTIONS;
       setArchivePeriods(periods);
       return periods;
@@ -1855,6 +1884,19 @@ function App() {
     });
     setArchivePeriods([]);
     await loadArchivePeriods(facultyId, semesterId);
+  };
+
+  const handleAdminFacultyChange = async (facultyId) => {
+    submissionForm.setFieldsValue({
+      archiveSemesterId: undefined,
+      submissionPeriodId: undefined,
+      facultyOtherName: undefined
+    });
+    setArchiveSemesters([]);
+    setArchivePeriods([]);
+    if (facultyId && facultyId !== OTHER_FACULTY_VALUE) {
+      await loadArchiveSemesters(facultyId);
+    }
   };
 
   const handleSubmissionPeriodChange = (periodId) => {
@@ -2187,8 +2229,29 @@ function App() {
     formData.append("metadata", JSON.stringify(metadata));
     formData.append("authorIds", JSON.stringify(authorIds));
     formData.append("reviewerIds", JSON.stringify(reviewerIds));
-    if (values.submissionPeriodId) {
+    const adminOtherFaculty = auth.user.role === "admin" && values.archiveFacultyId === OTHER_FACULTY_VALUE;
+    if (values.submissionPeriodId && !adminOtherFaculty) {
       formData.append("submissionPeriodId", values.submissionPeriodId);
+    }
+    if (auth.user.role === "admin") {
+      // Tuỳ chọn riêng của Admin: khoa của bài nộp + các bước duyệt được bật
+      if (adminOtherFaculty) {
+        formData.append("facultyOtherName", String(values.facultyOtherName || "").trim());
+      } else if (values.archiveFacultyId) {
+        formData.append("facultyId", values.archiveFacultyId);
+      }
+      const roles = [];
+      if (values.workflowReviewer !== false) roles.push("reviewer");
+      if (values.workflowLibrary !== false) roles.push("library_staff");
+      if (values.workflowDirector !== false) roles.push("director");
+      formData.append("workflowRoles", JSON.stringify(roles));
+      let style = "margin_strips";
+      try {
+        style = localStorage.getItem("bklib_signature_style") || style;
+      } catch (_e) {
+        // localStorage không dùng được: giữ kiểu mặc định
+      }
+      formData.append("signatureStyle", style);
     }
     const thesisFile = values.thesisFile?.[0]?.originFileObj;
     if (thesisFile) {
@@ -2623,14 +2686,16 @@ function App() {
           throw new Error(t("{{label}} is required", { label: fieldDisplayLabel(field, t) }));
         }
       }
-      if (structuralRequired("submissionPeriodId") && !values.submissionPeriodId) {
+      const adminOtherFaculty = isAdminActor && values.archiveFacultyId === OTHER_FACULTY_VALUE;
+      const adminReviewerOff = isAdminActor && values.workflowReviewer === false;
+      if (structuralRequired("submissionPeriodId") && !values.submissionPeriodId && !adminOtherFaculty) {
         throw new Error("Please select a submission period");
       }
       const reviewerIds = Array.isArray(values.reviewerIds) ? values.reviewerIds : [];
-      if (showNative("reviewerIds") && structuralRequired("reviewerIds") && reviewerIds.length === 0) {
+      if (showNative("reviewerIds") && structuralRequired("reviewerIds") && !adminReviewerOff && reviewerIds.length === 0) {
         throw new Error("Please select at least one reviewer");
       }
-      if (!showNative("reviewerIds") && structuralRequired("reviewerIds") && !String(values.reviewerIds ?? "").trim()) {
+      if (!showNative("reviewerIds") && structuralRequired("reviewerIds") && !adminReviewerOff && !String(values.reviewerIds ?? "").trim()) {
         throw new Error("Please select at least one reviewer");
       }
 
@@ -3346,14 +3411,32 @@ function App() {
                     placeholder={t("Student faculty")}
                     loading={isLoadingArchiveFaculties}
                     options={facultySelectOptions}
-                    disabled
+                    disabled={!isAdminActor}
+                    showSearch={isAdminActor}
+                    optionFilterProp="label"
+                    onChange={isAdminActor ? (value) => void handleAdminFacultyChange(value) : undefined}
                     notFoundContent={
                       isLoadingArchiveFaculties ? t("Loading...") : t("No faculty assigned")
                     }
                   />
                 </Form.Item>
               ) : renderAlternateField("archiveFacultyId")}
-              {showNative("archiveSemesterId") ? (
+              {isAdminActor ? (
+                <Paragraph type="secondary" style={{ marginTop: -16, fontSize: 12 }}>
+                  {t("The faculty applies to this submission only; the student's profile keeps its faculty.")}
+                </Paragraph>
+              ) : null}
+              {isOtherFaculty ? (
+                <Form.Item
+                  label={t("Faculty name")}
+                  name="facultyOtherName"
+                  extra={t("Not linked to a DSpace collection: choose the collection manually when pushing to DSpace.")}
+                  rules={[{ required: true, whitespace: true, message: t("Please enter the faculty name") }]}
+                >
+                  <Input placeholder={t("Enter the faculty name")} />
+                </Form.Item>
+              ) : null}
+              {showNative("archiveSemesterId") && !isOtherFaculty ? (
                 <Form.Item
                   label={t("Semester")}
                   name="archiveSemesterId"
@@ -3371,8 +3454,8 @@ function App() {
                     notFoundContent={isLoadingArchiveSemesters ? t("Loading...") : t("Select a faculty first")}
                   />
                 </Form.Item>
-              ) : renderAlternateField("archiveSemesterId")}
-              {showNative("submissionPeriodId") ? (
+              ) : isOtherFaculty ? null : renderAlternateField("archiveSemesterId")}
+              {showNative("submissionPeriodId") && !isOtherFaculty ? (
                 <Form.Item
                   label={t("Submission period")}
                   name="submissionPeriodId"
@@ -3386,18 +3469,49 @@ function App() {
                     loading={isLoadingArchivePeriods}
                     disabled={!archiveSemesterId || !canChangeSubmissionPeriod}
                     onChange={handleSubmissionPeriodChange}
-                    options={archivePeriods.map((p) => ({
-                      value: p.id,
-                      label: p.closesAt
+                    options={archivePeriods.map((p) => {
+                      const base = p.closesAt
                         ? t("{{name}} (closes {{date}})", { name: p.name, date: formatDate(p.closesAt, lang) })
-                        : p.name
-                    }))}
+                        : p.name;
+                      // Admin thấy cả đợt đã đóng / bị ẩn với nhãn rõ ràng
+                      return {
+                        value: p.id,
+                        label: isAdminActor && p.isOpen === false ? `${base} — ${t("closed / hidden")}` : base
+                      };
+                    })}
                     notFoundContent={
                       isLoadingArchivePeriods ? t("Loading...") : t("No open periods for this semester")
                     }
                   />
                 </Form.Item>
-              ) : renderAlternateField("submissionPeriodId")}
+              ) : isOtherFaculty ? null : renderAlternateField("submissionPeriodId")}
+
+              {isAdminActor ? (
+                <Card size="small" title={t("Review steps for this submission")} style={{ marginBottom: 16 }}>
+                  <Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
+                    {t("Turn off a step to skip it. With every step off, the thesis is archived and digitally signed immediately.")}
+                  </Paragraph>
+                  <Space wrap size="large">
+                    <Form.Item name="workflowReviewer" valuePropName="checked" initialValue noStyle>
+                      <Switch checkedChildren={t("Reviewer")} unCheckedChildren={t("Reviewer")} />
+                    </Form.Item>
+                    <Form.Item name="workflowLibrary" valuePropName="checked" initialValue noStyle>
+                      <Switch checkedChildren={t("Library")} unCheckedChildren={t("Library")} />
+                    </Form.Item>
+                    <Form.Item name="workflowDirector" valuePropName="checked" initialValue noStyle>
+                      <Switch checkedChildren={t("Director")} unCheckedChildren={t("Director")} />
+                    </Form.Item>
+                  </Space>
+                  {noReviewStepsSelected ? (
+                    <Alert
+                      style={{ marginTop: 12 }}
+                      type="warning"
+                      showIcon
+                      message={t("No review: the thesis will be archived and signed as soon as it is submitted.")}
+                    />
+                  ) : null}
+                </Card>
+              ) : null}
 
               <Divider style={{ margin: "8px 0" }} />
               {isAdminActor && showNative("authorIds") ? (
@@ -3500,7 +3614,8 @@ function App() {
                   <Form.Item
                     label={t("Reviewers")}
                     name="reviewerIds"
-                    rules={structuralRequired("reviewerIds") ? [{ required: true, message: t("Please select at least one reviewer") }] : []}
+                    extra={reviewerStepOff ? t("Reviewer step is off: reviewer accounts are optional and will not be asked to approve.") : undefined}
+                    rules={structuralRequired("reviewerIds") && !reviewerStepOff ? [{ required: true, message: t("Please select at least one reviewer") }] : []}
                   >
                     <Select
                       mode="multiple"
@@ -4653,13 +4768,13 @@ function App() {
                         <div style={{ position: "absolute", left: 2, top: 8, bottom: 8, width: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>
                           <div style={{ writingMode: "vertical-rl", transform: "rotate(180deg)", display: "flex", alignItems: "center", gap: 2, fontSize: 6, fontWeight: "bold", color: "#595959", opacity: 0.6, letterSpacing: 0.5, whiteSpace: "nowrap" }}>
                             <img src="/hcmut_nobg.png" alt="" style={{ width: 8, height: 8, transform: "rotate(90deg)", filter: "grayscale(1)" }} />
-                            Truong Dai hoc Bach Khoa - HCMUT
+                            TRƯỜNG ĐẠI HỌC BÁCH KHOA - HCMUT
                           </div>
                         </div>
                         <div style={{ position: "absolute", right: 2, top: 8, bottom: 8, width: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>
                           <div style={{ writingMode: "vertical-rl", display: "flex", alignItems: "center", gap: 2, fontSize: 6, fontWeight: "bold", color: "#595959", opacity: 0.6, letterSpacing: 0.5, whiteSpace: "nowrap" }}>
                             <img src="/hcmut_nobg.png" alt="" style={{ width: 8, height: 8, transform: "rotate(90deg)", filter: "grayscale(1)" }} />
-                            Truong Dai hoc Bach Khoa - HCMUT
+                            TRƯỜNG ĐẠI HỌC BÁCH KHOA - HCMUT
                           </div>
                         </div>
                       </>

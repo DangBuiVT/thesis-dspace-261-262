@@ -1443,5 +1443,19 @@ export const catalog = {
     {
       en: "Configure every field on the student form. Turn a field off to hide it, or change its input type. Disabled fields are not required when submitting.",
       vi: "Cấu hình mọi trường trên form sinh viên. Tắt để ẩn, hoặc đổi kiểu nhập. Trường tắt không bắt buộc khi nộp."
-    }
+    },
+  "Other (enter faculty name)": { en: "Other (enter faculty name)", vi: "Khác (nhập tên khoa)" },
+  "The faculty applies to this submission only; the student's profile keeps its faculty.": { en: "The faculty applies to this submission only; the student's profile keeps its faculty.", vi: "Khoa chỉ áp dụng cho bài nộp này; hồ sơ sinh viên vẫn giữ khoa cũ." },
+  "Not linked to a DSpace collection: choose the collection manually when pushing to DSpace.": { en: "Not linked to a DSpace collection: choose the collection manually when pushing to DSpace.", vi: "Không gắn với collection DSpace nào: chọn collection thủ công khi đẩy lên DSpace." },
+  "Please enter the faculty name": { en: "Please enter the faculty name", vi: "Vui lòng nhập tên khoa" },
+  "Enter the faculty name": { en: "Enter the faculty name", vi: "Nhập tên khoa" },
+  "closed / hidden": { en: "closed / hidden", vi: "đã đóng / ẩn" },
+  "Review steps for this submission": { en: "Review steps for this submission", vi: "Các bước duyệt cho bài nộp này" },
+  "Turn off a step to skip it. With every step off, the thesis is archived and digitally signed immediately.": { en: "Turn off a step to skip it. With every step off, the thesis is archived and digitally signed immediately.", vi: "Tắt một bước để bỏ qua bước đó. Tắt cả 3 bước thì luận văn được lưu chiểu và ký số ngay." },
+  "Library": { en: "Library", vi: "Thư viện" },
+  "No review: the thesis will be archived and signed as soon as it is submitted.": { en: "No review: the thesis will be archived and signed as soon as it is submitted.", vi: "Không cần duyệt: luận văn sẽ được lưu chiểu và ký số ngay khi nộp." },
+  "Reviewer step is off: reviewer accounts are optional and will not be asked to approve.": { en: "Reviewer step is off: reviewer accounts are optional and will not be asked to approve.", vi: "Bước Phản biện đang tắt: không bắt buộc chọn phản biện, người được chọn chỉ được ghi tên, không phải duyệt." },
+  "The submission period must belong to the selected faculty": { en: "The submission period must belong to the selected faculty", vi: "Đợt nộp phải thuộc khoa đã chọn" },
+  "Only administrators can override faculty, period or workflow steps": { en: "Only administrators can override faculty, period or workflow steps", vi: "Chỉ Quản trị viên được đổi khoa, đợt nộp hoặc các bước duyệt" },
+  "Submission period does not exist": { en: "Submission period does not exist", vi: "Đợt nộp không tồn tại" }
 };

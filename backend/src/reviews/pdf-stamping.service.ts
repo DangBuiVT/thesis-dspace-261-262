@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
-import { PDFDocument, rgb, degrees, StandardFonts } from "pdf-lib";
+import { PDFDocument, PDFFont, rgb, degrees, StandardFonts } from "pdf-lib";
+import * as fontkit from "@pdf-lib/fontkit";
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import * as path from "node:path";
@@ -16,8 +17,10 @@ export interface StampingResult {
 @Injectable()
 export class PdfStampingService {
   private readonly institutionText = "DAI HOC BACH KHOA THANH PHO HO CHI MINH - HCMUT";
-  /** Chữ trên dải 2 bên lề (đi kèm logo xám). */
-  private readonly marginStripText = "Truong Dai hoc Bach Khoa - HCMUT";
+  /** Chữ trên dải 2 bên lề (đi kèm logo xám) — cần font Unicode (DejaVuSans-Bold.ttf). */
+  private readonly marginStripText = "TRƯỜNG ĐẠI HỌC BÁCH KHOA - HCMUT";
+  /** Dùng khi không tìm thấy font Unicode (Helvetica không có dấu tiếng Việt). */
+  private readonly marginStripTextAscii = "TRUONG DAI HOC BACH KHOA - HCMUT";
   /** Màu xám dùng chung cho chữ và logo ở dải 2 bên lề. */
   private readonly marginGray = rgb(0.35, 0.35, 0.35);
   private readonly marginOpacity = 0.22;
@@ -117,9 +120,21 @@ export class PdfStampingService {
       const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
       const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
-      // Logo xám cho dải 2 bên lề (nhúng 1 lần, dùng lại cho mọi trang)
+      // Logo xám + font tiếng Việt cho dải 2 bên lề (nhúng 1 lần, dùng lại cho mọi trang)
       let grayLogo: Awaited<ReturnType<PDFDocument["embedPng"]>> | null = null;
+      let stripFont: PDFFont = helveticaBold;
+      let stripText = this.marginStripTextAscii;
       if (style === "margin_strips") {
+        const fontPath = this.resolveLogoPath("DejaVuSans-Bold.ttf");
+        if (fontPath) {
+          try {
+            pdfDoc.registerFontkit(fontkit);
+            stripFont = await pdfDoc.embedFont(await readFile(fontPath), { subset: true });
+            stripText = this.marginStripText;
+          } catch (e) {
+            console.error("Failed to embed Unicode font for margin strips:", e);
+          }
+        }
         const grayLogoPath = this.resolveLogoPath("hcmut_gray.png");
         if (grayLogoPath) {
           try {
@@ -136,9 +151,8 @@ export class PdfStampingService {
 
         if (style === "margin_strips") {
           // Dải lề: [logo xám] + "Truong Dai hoc Bach Khoa - HCMUT", cùng màu xám & độ mờ
-          const fontSize = 16;
-          const stripText = this.marginStripText;
-          const textWidth = helveticaBold.widthOfTextAtSize(stripText, fontSize);
+          const fontSize = 15;
+          const textWidth = stripFont.widthOfTextAtSize(stripText, fontSize);
           const marginOffset = 30; // khoảng cách đường baseline tới mép trang
           const capHeight = fontSize * 0.72;
           const logoSize = fontSize * 1.6; // cạnh dọc theo dải
@@ -164,7 +178,7 @@ export class PdfStampingService {
             x: marginOffset,
             y: leftStart + (grayLogo ? logoSize + gap : 0),
             size: fontSize,
-            font: helveticaBold,
+            font: stripFont,
             color: this.marginGray,
             opacity: this.marginOpacity,
             rotate: degrees(90),
@@ -189,7 +203,7 @@ export class PdfStampingService {
             x: rightBaseX,
             y: rightStart - (grayLogo ? logoSize + gap : 0),
             size: fontSize,
-            font: helveticaBold,
+            font: stripFont,
             color: this.marginGray,
             opacity: this.marginOpacity,
             rotate: degrees(-90),
