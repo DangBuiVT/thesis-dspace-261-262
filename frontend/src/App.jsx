@@ -3,12 +3,14 @@ import {
   Alert,
   Button,
   Card,
+  Col,
   Descriptions,
   Divider,
   Form,
   Input,
   Layout,
   Modal,
+  Row,
   Select,
   Space,
   Table,
@@ -732,6 +734,14 @@ function App() {
   const [adminRejectModalOpen, setAdminRejectModalOpen] = useState(false);
   const [adminRejectTargetId, setAdminRejectTargetId] = useState(null);
   const [adminRejectReason, setAdminRejectReason] = useState("");
+  const [legacyBatchList, setLegacyBatchList] = useState([]);
+  const [isLoadingLegacyBatch, setIsLoadingLegacyBatch] = useState(false);
+  const [selectedLegacyKeys, setSelectedLegacyKeys] = useState([]);
+  const [batchSigningLoading, setBatchSigningLoading] = useState(false);
+  const [legacyBatchStyle, setLegacyBatchStyle] = useState(() => localStorage.getItem("bklib_signature_style") || "margin_strips");
+  const [legacyBatchPages, setLegacyBatchPages] = useState(() => localStorage.getItem("bklib_watermark_pages") || "10");
+  const [batchWarningModalOpen, setBatchWarningModalOpen] = useState(false);
+  const [batchResultData, setBatchResultData] = useState(null);
   const [staffDetailRecord, setStaffDetailRecord] = useState(null);
   const [studentDetailRecord, setStudentDetailRecord] = useState(null);
   const [reviewerDetailRecord, setReviewerDetailRecord] = useState(null);
@@ -1568,6 +1578,65 @@ function App() {
     }
   };
 
+  const loadLegacyBatchList = async () => {
+    setIsLoadingLegacyBatch(true);
+    try {
+      const response = await fetch("/api/reviews/legacy-batch-queue", {
+        headers: {
+          ...authHeaders(auth?.token)
+        }
+      });
+      const payload = await parseResponse(response);
+      if (!response.ok || !Array.isArray(payload)) {
+        throw new Error("Unable to load legacy submissions");
+      }
+      setLegacyBatchList(payload);
+    } catch (error) {
+      message.error(tr(error.message || "Unable to load legacy submissions"));
+    } finally {
+      setIsLoadingLegacyBatch(false);
+    }
+  };
+
+  const handleBatchSignLegacy = async () => {
+    if (selectedLegacyKeys.length === 0) {
+      message.warning("Vui lòng tích chọn ít nhất 1 bài nộp cũ để ký");
+      return;
+    }
+    setBatchSigningLoading(true);
+    try {
+      const response = await fetch("/api/reviews/batch-sign-legacy", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders(auth?.token)
+        },
+        body: JSON.stringify({
+          submissionIds: selectedLegacyKeys,
+          signatureStyle: legacyBatchStyle,
+          watermarkPages: legacyBatchPages.trim() || "10"
+        })
+      });
+      const payload = await parseResponse(response);
+      if (!response.ok) {
+        throw new Error(payload?.message || "Lỗi khi ký số hàng loạt");
+      }
+      setBatchResultData(payload);
+      setBatchWarningModalOpen(true);
+      message.success(`Đã ký số thành công cho ${payload.successCount}/${payload.total} bài nộp!`);
+      setSelectedLegacyKeys([]);
+      void loadLegacyBatchList();
+      void loadAdminIntakeQueue();
+      if (hasPermission(auth.user, "view_all_submissions")) {
+        void loadStaffSubmissions();
+      }
+    } catch (err) {
+      message.error(err.message || "Lỗi ký số");
+    } finally {
+      setBatchSigningLoading(false);
+    }
+  };
+
   const loadStudentSubmissions = async (studentId) => {
     setIsLoadingSubmissions(true);
     try {
@@ -1627,6 +1696,7 @@ function App() {
       }
       if (auth.user.role === "admin") {
         void loadAdminIntakeQueue();
+        void loadLegacyBatchList();
       }
       if (hasPermission(auth.user, "library_intake")) {
         void loadLibraryQueue();
@@ -4006,6 +4076,180 @@ function App() {
                           />
                         </>
                       )
+                    },
+                    {
+                      key: "legacy-batch",
+                      label: t("Ký số hàng loạt bài cũ"),
+                      children: (
+                        <>
+                          <Paragraph type="secondary">
+                            {t("Flow chuyển luồng ký 1 loạt những file/bài nộp cũ đã có sẵn cho Quản trị viên. Có thể chọn kiểu ký, cấu hình trang ký watermark logo HCMUT bí mật và thực hiện ký đồng loạt.")}
+                          </Paragraph>
+                          
+                          <Card 
+                            size="small" 
+                            title="⚙️ Thiết lập tham số ký số & Watermark hàng loạt"
+                            style={{ marginBottom: 14, background: "#f8fafc", border: "1.5px solid #93c5fd" }}
+                          >
+                            <Row gutter={[16, 12]} align="middle">
+                              <Col xs={24} sm={12} md={7}>
+                                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, color: "#1e293b" }}>
+                                  Kiểu chữ ký số áp dụng:
+                                </div>
+                                <Select
+                                  style={{ width: "100%" }}
+                                  value={legacyBatchStyle}
+                                  onChange={(val) => {
+                                    setLegacyBatchStyle(val);
+                                    localStorage.setItem("bklib_signature_style", val);
+                                  }}
+                                  options={[
+                                    { value: "margin_strips", label: "2 Bên Lề (Margin Strips)" },
+                                    { value: "diagonal", label: "Chéo Trang (Diagonal 45°)" },
+                                    { value: "invisible", label: "Ký Ẩn (Invisible PAdES)" },
+                                  ]}
+                                />
+                              </Col>
+                              <Col xs={24} sm={12} md={8}>
+                                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, color: "#1e293b" }}>
+                                  Trang đóng watermark logo HCMUT bí mật:
+                                </div>
+                                <Input
+                                  placeholder="VD: 10 hoặc 10, 15, 20"
+                                  value={legacyBatchPages}
+                                  onChange={(e) => {
+                                    setLegacyBatchPages(e.target.value);
+                                    localStorage.setItem("bklib_watermark_pages", e.target.value);
+                                  }}
+                                />
+                              </Col>
+                              <Col xs={24} sm={24} md={9} style={{ textAlign: "right" }}>
+                                <Space wrap>
+                                  <Button 
+                                    onClick={() => loadLegacyBatchList()} 
+                                    loading={isLoadingLegacyBatch}
+                                  >
+                                    Làm mới
+                                  </Button>
+                                  <Button
+                                    type="primary"
+                                    disabled={selectedLegacyKeys.length === 0}
+                                    loading={batchSigningLoading}
+                                    onClick={handleBatchSignLegacy}
+                                    style={{ background: "#0284c7", borderColor: "#0284c7" }}
+                                  >
+                                    ✍️ Bắt đầu ký ({selectedLegacyKeys.length} bài đã chọn)
+                                  </Button>
+                                </Space>
+                              </Col>
+                            </Row>
+
+                            <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
+                              * <em>Nếu file PDF không có đủ số trang tương ứng (ví dụ: file chỉ có 5 trang nhưng chọn trang 10), hệ thống sẽ không đóng dấu lên trang đó và hiển thị thông báo cảnh báo (warning) chi tiết.</em>
+                            </div>
+                          </Card>
+
+                          <Table
+                            rowKey="id"
+                            rowSelection={{
+                              selectedRowKeys: selectedLegacyKeys,
+                              onChange: (keys) => setSelectedLegacyKeys(keys),
+                            }}
+                            dataSource={legacyBatchList}
+                            loading={isLoadingLegacyBatch}
+                            pagination={{ pageSize: 10, showSizeChanger: true }}
+                            columns={[
+                              {
+                                title: t("Submission"),
+                                dataIndex: "title",
+                                key: "title",
+                                render: (title, record) => (
+                                  <div>
+                                    <div style={{ fontWeight: 600, color: "#1e293b" }}>{title || "(Chưa đặt tên)"}</div>
+                                    <div style={{ fontSize: 11, color: "#64748b" }}>
+                                      Mã SV: {record.student_id || "—"} | Tác giả: {record.author || "—"}
+                                    </div>
+                                    <div style={{ fontSize: 11, color: "#0284c7" }}>
+                                      {record.faculty_name ? `Khoa: ${record.faculty_name}` : ""} {record.semester_name ? `• ${record.semester_name}` : ""}
+                                    </div>
+                                  </div>
+                                )
+                              },
+                              {
+                                title: t("Status"),
+                                dataIndex: "status",
+                                key: "status",
+                                width: 140,
+                                render: (status) => {
+                                  if (status === "archived") return <Tag color="green">Đã lưu chiểu</Tag>;
+                                  if (status === "approved") return <Tag color="blue">Đã duyệt</Tag>;
+                                  if (status === "reviewing") return <Tag color="orange">Đang xử lý</Tag>;
+                                  if (status === "rejected") return <Tag color="red">Bị từ chối</Tag>;
+                                  return <Tag>{status}</Tag>;
+                                }
+                              },
+                              {
+                                title: t("Chữ ký số"),
+                                key: "is_signed",
+                                width: 160,
+                                render: (_, record) => {
+                                  if (record.is_signed) {
+                                    return (
+                                      <div>
+                                        <Tag color="cyan">✓ Đã ký số</Tag>
+                                        <div style={{ fontSize: 10, color: "#475569", marginTop: 2 }}>
+                                          Kiểu: {record.signature_style === "margin_strips" ? "2 Bên lề" : (record.signature_style === "diagonal" ? "Chéo 45°" : "Ký ẩn")}
+                                        </div>
+                                        {record.watermark_pages && (
+                                          <div style={{ fontSize: 10, color: "#0369a1" }}>
+                                            WM trang: {record.watermark_pages}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  }
+                                  return <Tag color="default">Chưa ký số</Tag>;
+                                }
+                              },
+                              {
+                                title: t("File PDF"),
+                                key: "files",
+                                width: 180,
+                                render: (_, record) => {
+                                  const pdfFile = (record.files || []).find((f) => f.fileName?.toLowerCase().endsWith(".pdf"));
+                                  if (!pdfFile) return <span style={{ color: "#94a3b8", fontSize: 12 }}>Không có PDF</span>;
+                                  return (
+                                    <Button
+                                      size="small"
+                                      type="link"
+                                      onClick={() => {
+                                        window.open(`/api/submissions/${record.id}/files/${pdfFile.id}/download`, "_blank");
+                                      }}
+                                    >
+                                      📄 Tải {pdfFile.fileName.length > 15 ? pdfFile.fileName.substring(0, 15) + "..." : pdfFile.fileName}
+                                    </Button>
+                                  );
+                                }
+                              },
+                              {
+                                title: t("Actions"),
+                                key: "actions",
+                                width: 120,
+                                render: (_, record) => (
+                                  <Button
+                                    size="small"
+                                    onClick={() => {
+                                      setStaffDetailRecord(record);
+                                    }}
+                                  >
+                                    {t("Details")}
+                                  </Button>
+                                )
+                              }
+                            ]}
+                          />
+                        </>
+                      )
                     }
                   ]}
                 />
@@ -4795,6 +5039,65 @@ function App() {
             <Button type="primary" htmlType="submit" loading={changingPassword}>{t("Update password")}</Button>
           </Space>
         </Form>
+      </Modal>
+
+      {/* MODAL KẾT QUẢ KÝ SỐ HÀNG LOẠT & CẢNH BÁO WARNING SỐ TRANG */}
+      <Modal
+        title="📑 Kết quả ký số hàng loạt & Cảnh báo trang watermark"
+        open={batchWarningModalOpen}
+        onOk={() => setBatchWarningModalOpen(false)}
+        onCancel={() => setBatchWarningModalOpen(false)}
+        width={650}
+        footer={[
+          <Button key="close" type="primary" onClick={() => setBatchWarningModalOpen(false)}>
+            Đã hiểu & Đóng
+          </Button>
+        ]}
+      >
+        {batchResultData && (
+          <div>
+            <Alert
+              type={batchResultData.results?.some((r) => r.warnings?.length > 0) ? "warning" : "success"}
+              showIcon
+              message={`Đã hoàn tất ký số cho ${batchResultData.successCount}/${batchResultData.total} bài nộp.`}
+              description={
+                batchResultData.results?.some((r) => r.warnings?.length > 0)
+                  ? "Một số file PDF có cảnh báo về trang ký watermark logo hoặc cấu trúc file. Vui lòng kiểm tra chi tiết danh sách bên dưới:"
+                  : "Tất cả các bài nộp đã được ký số và chèn watermark thành công theo cấu hình!"
+              }
+              style={{ marginBottom: 14 }}
+            />
+
+            <div style={{ maxHeight: 320, overflowY: "auto" }}>
+              {(batchResultData.results || []).map((res, index) => (
+                <div
+                  key={index}
+                  style={{
+                    padding: "8px 12px",
+                    marginBottom: 8,
+                    background: res.warnings?.length > 0 ? "#fffbeb" : "#f0fdf4",
+                    border: `1px solid ${res.warnings?.length > 0 ? "#fef08a" : "#bbf7d0"}`,
+                    borderRadius: 6
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <strong style={{ color: "#1e293b" }}>{res.title || "(Chưa đặt tên)"}</strong>
+                    {res.signed ? <Tag color="green">Ký thành công</Tag> : <Tag color="red">Thất bại</Tag>}
+                  </div>
+                  {res.warnings && res.warnings.length > 0 ? (
+                    <div style={{ marginTop: 4, fontSize: 12, color: "#b45309" }}>
+                      ⚠️ <strong>Cảnh báo:</strong> {res.warnings.join(" | ")}
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: 2, fontSize: 11, color: "#15803d" }}>
+                      ✓ Đã đóng dấu và chèn watermark trang chỉ định hợp lệ.
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </Modal>
     </Layout>
   );

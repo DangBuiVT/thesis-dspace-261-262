@@ -1,4 +1,4 @@
-﻿import {
+import {
   IsIn,
   IsNotEmpty,
   IsObject,
@@ -23,6 +23,10 @@ export class ReviewActionDto {
   @IsOptional()
   signatureStyle?: string;
 
+  @IsString()
+  @IsOptional()
+  watermarkPages?: string;
+
   @IsObject()
   @IsOptional()
   metadata?: {
@@ -40,5 +44,6 @@ export class ReviewActionDto {
     description?: string;
     extraMetadata?: Record<string, string>;
     signatureStyle?: string;
+    watermarkPages?: string;
   };
 }

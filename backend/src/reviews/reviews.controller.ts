@@ -65,4 +65,21 @@ export class ReviewsController {
   adminIntakeAct(@Req() req: { user: JwtPayload }, @Body() body: ReviewActionDto) {
     return this.reviewsService.adminIntakeAct(req.user, body);
   }
+
+  @Get("legacy-batch-queue")
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions("configure_system")
+  legacyBatchQueue(@Req() req: { user: JwtPayload }) {
+    return this.reviewsService.getLegacyBatchSubmissions(req.user);
+  }
+
+  @Post("batch-sign-legacy")
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions("configure_system")
+  batchSignLegacy(
+    @Req() req: { user: JwtPayload },
+    @Body() body: { submissionIds: string[]; signatureStyle?: any; watermarkPages?: string }
+  ) {
+    return this.reviewsService.batchSignLegacy(req.user, body);
+  }
 }

@@ -1,4 +1,4 @@
-﻿import {
+import {
   BadRequestException,
   Body,
   Controller,
@@ -230,6 +230,7 @@ export class SubmissionsController {
         req.user,
         submissionId,
         fileId,
+        style,
       );
     const encoded = encodeURIComponent(fileName);
     return new StreamableFile(stream, {

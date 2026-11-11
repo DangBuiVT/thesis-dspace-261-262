@@ -15,6 +15,7 @@ import type { JwtPayload } from "../auth/jwt.strategy";
 import { GroupsService } from "../workflow/groups.service";
 import { WorkflowService } from "../workflow/workflow.service";
 import { ReviewActionDto } from "./dto/review-action.dto";
+import { PdfStampingService, SignatureStyleType } from "./pdf-stamping.service";
 import {
   SubmissionStatus,
   ReviewDecision,
@@ -40,6 +41,7 @@ export class ReviewsService {
     private readonly workflowMail: WorkflowMailService,
     private readonly workflow: WorkflowService,
     private readonly groups: GroupsService,
+    private readonly pdfStamping: PdfStampingService,
   ) { }
 
   private libraryIntakeReadyClause() {
@@ -665,6 +667,7 @@ export class ReviewsService {
                 signer_name: user.displayName || user.username || "ThS. Lê Hoàng (Thư viện)",
                 signed_at: new Date().toISOString(),
                 signature_style: dto.signatureStyle || (dto.metadata as any)?.signatureStyle || "margin_strips",
+                watermark_pages: dto.watermarkPages || (dto.metadata as any)?.watermarkPages || (await this.db.query<{ value: string }>("SELECT value FROM system_settings WHERE key = 'signature_watermark_pages' LIMIT 1")).rows[0]?.value || "10",
                 signature_style_name: (dto.signatureStyle === "diagonal" || (dto.metadata as any)?.signatureStyle === "diagonal") 
                   ? "Chữ ký số chéo trang" 
                   : ((dto.signatureStyle === "invisible" || (dto.metadata as any)?.signatureStyle === "invisible") 
@@ -1122,6 +1125,7 @@ export class ReviewsService {
                   signer_name: user.displayName || user.username || "Admin (Bảo lưu)",
                   signed_at: new Date().toISOString(),
                   signature_style: dto.signatureStyle || (dto.metadata as any)?.signatureStyle || "margin_strips",
+                  watermark_pages: dto.watermarkPages || (dto.metadata as any)?.watermarkPages || (await this.db.query<{ value: string }>("SELECT value FROM system_settings WHERE key = 'signature_watermark_pages' LIMIT 1")).rows[0]?.value || "10",
                   signature_style_name:
                     dto.signatureStyle === "diagonal" ||
                     (dto.metadata as any)?.signatureStyle === "diagonal"
@@ -1220,4 +1224,225 @@ export class ReviewsService {
 
     throw new BadRequestException("Unknown stage role");
   }
+
+  /**
+   * Danh sách các bài nộp cũ / đã nộp trong hệ thống để phục vụ chuyển luồng ký hàng loạt
+   */
+  async getLegacyBatchSubmissions(user: JwtPayload) {
+    if (user.role !== WorkflowRole.ADMIN) {
+      throw new ForbiddenException();
+    }
+    const result = await this.db.query(
+      `SELECT s.id,
+              s.title,
+              s.author,
+              s.student_id,
+              s.status,
+              s.created_at,
+              COALESCE(NULLIF(s.faculty_name, ''), f.name) AS faculty_name,
+              COALESCE(NULLIF(s.semester_name, ''), sem.name) AS semester_name,
+              EXISTS (
+                SELECT 1 FROM submission_events se 
+                WHERE se.submission_id = s.id AND se.event_type = 'digital_signature_signed'
+              ) AS is_signed,
+              (
+                SELECT payload->>'signature_style' 
+                FROM submission_events se 
+                WHERE se.submission_id = s.id AND se.event_type = 'digital_signature_signed' 
+                ORDER BY created_at DESC LIMIT 1
+              ) AS signature_style,
+              (
+                SELECT payload->>'watermark_pages' 
+                FROM submission_events se 
+                WHERE se.submission_id = s.id AND se.event_type = 'digital_signature_signed' 
+                ORDER BY created_at DESC LIMIT 1
+              ) AS watermark_pages,
+              COALESCE(
+                json_agg(
+                  json_build_object(
+                    'id', sf.id,
+                    'fileName', sf.file_name,
+                    'fileUrl', sf.file_url,
+                    'fileType', sf.file_type
+                  )
+                ) FILTER (WHERE sf.id IS NOT NULL),
+                '[]'::json
+              ) AS files
+       FROM submissions s
+       LEFT JOIN submission_periods sp ON sp.id = s.submission_period_id
+       LEFT JOIN semesters sem ON sem.id = sp.semester_id
+       LEFT JOIN faculties f ON f.id = sem.faculty_id
+       LEFT JOIN submission_files sf ON sf.submission_id = s.id
+       GROUP BY s.id,
+                s.title,
+                s.author,
+                s.student_id,
+                s.status,
+                s.created_at,
+                s.faculty_name,
+                f.name,
+                s.semester_name,
+                sem.name
+       ORDER BY s.created_at DESC`
+    );
+    return result.rows;
+  }
+
+  /**
+   * Ký số hàng loạt (Batch Sign) các bài nộp cũ
+   */
+  async batchSignLegacy(
+    user: JwtPayload,
+    dto: {
+      submissionIds: string[];
+      signatureStyle?: SignatureStyleType;
+      watermarkPages?: string;
+    }
+  ) {
+    if (user.role !== WorkflowRole.ADMIN) {
+      throw new ForbiddenException();
+    }
+    const { submissionIds, signatureStyle = "margin_strips", watermarkPages } = dto;
+    if (!Array.isArray(submissionIds) || submissionIds.length === 0) {
+      throw new BadRequestException("Vui lòng chọn ít nhất 1 bài nộp để ký số");
+    }
+
+    const defaultWatermarkPages = watermarkPages ||
+      (await this.db.query<{ value: string }>(
+        "SELECT value FROM system_settings WHERE key = 'signature_watermark_pages' LIMIT 1"
+      )).rows[0]?.value || "10";
+
+    const results: Array<{
+      submissionId: string;
+      title: string;
+      status: string;
+      signed: boolean;
+      warnings: string[];
+    }> = [];
+
+    for (const subId of submissionIds) {
+      const subRes = await this.db.query<{ id: string; title: string; status: string }>(
+        `SELECT id, title, status FROM submissions WHERE id = $1::uuid LIMIT 1`,
+        [subId]
+      );
+      const sub = subRes.rows[0];
+      if (!sub) continue;
+
+      const fileRes = await this.db.query<{ id: string; file_name: string; file_url: string }>(
+        `SELECT id, file_name, file_url FROM submission_files WHERE submission_id = $1::uuid AND LOWER(file_name) LIKE '%.pdf' LIMIT 1`,
+        [subId]
+      );
+      const file = fileRes.rows[0];
+      const warnings: string[] = [];
+
+      if (file) {
+        try {
+          const stampDetail = await this.pdfStamping.stampPdfFileDetailed(
+            file.file_url,
+            signatureStyle,
+            { watermarkPages: defaultWatermarkPages }
+          );
+          if (stampDetail.watermarkPagesMissing.length > 0) {
+            warnings.push(
+              `Tệp PDF có ${stampDetail.totalPages} trang, không có trang ${stampDetail.watermarkPagesMissing.join(", ")} để chèn watermark.`
+            );
+          }
+        } catch (e: any) {
+          warnings.push(`Kiểm tra file PDF: ${e?.message || "lỗi đọc file"}`);
+        }
+      }
+
+      const client = await this.db.connect();
+      try {
+        await client.query("BEGIN");
+        const signaturePayload = `${subId}-${user.sub}-${new Date().toISOString()}-BKlib-LegacyBatch`;
+        const sha256Hash = createHash("sha256").update(signaturePayload).digest("hex");
+        const certSerial = "BK-LEGACY-" + new Date().getFullYear() + "-" + Math.floor(100000 + Math.random() * 900000);
+        const handleId = "123456789/" + Math.floor(1000 + Math.random() * 9000);
+
+        // Đảm bảo bài nộp chuyển sang trạng thái đã lưu chiểu nếu đang draft/reviewing/approved
+        await client.query(
+          `UPDATE submissions
+           SET status = 'archived',
+               dspace_item_id = COALESCE(NULLIF(dspace_item_id, ''), $1),
+               dspace_publish_status = 'published'
+           WHERE id = $2::uuid`,
+          [handleId, subId]
+        );
+
+        await client.query(
+          `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
+           VALUES ($1, $2, $3, 'admin', 'digital_signature_signed', $4::jsonb)`,
+          [
+            randomUUID(),
+            subId,
+            user.sub,
+            JSON.stringify({
+              is_signed: true,
+              is_legacy_batch: true,
+              algorithm: "SHA-256 with RSA 2048 / PKCS#7",
+              sha256_hash: sha256Hash,
+              certificate_serial: certSerial,
+              issuer: "TRƯỜNG ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT / BKLIB CA ROOT",
+              institution_text: "ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT",
+              signed_pages_scope: "Tất cả các trang (100% pages)",
+              signer_name: user.displayName || user.username || "Quản trị viên (Ký số hàng loạt)",
+              signed_at: new Date().toISOString(),
+              signature_style: signatureStyle,
+              watermark_pages: defaultWatermarkPages,
+              signature_style_name:
+                signatureStyle === "diagonal"
+                  ? "Chữ ký số chéo trang"
+                  : signatureStyle === "invisible"
+                  ? "Không chữ ký số (Vô hình)"
+                  : "Chữ ký số 2 bên lề",
+            }),
+          ]
+        );
+
+        await client.query(
+          `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
+           VALUES ($1, $2, $3, 'system', 'status_changed', $4::jsonb)`,
+          [
+            randomUUID(),
+            subId,
+            user.sub,
+            JSON.stringify({
+              from: sub.status,
+              to: "archived",
+              reason: "admin_legacy_batch_signed",
+            }),
+          ]
+        );
+
+        await client.query("COMMIT");
+        results.push({
+          submissionId: subId,
+          title: sub.title,
+          status: "archived",
+          signed: true,
+          warnings,
+        });
+      } catch (err: any) {
+        await client.query("ROLLBACK");
+        results.push({
+          submissionId: subId,
+          title: sub.title,
+          status: sub.status,
+          signed: false,
+          warnings: [err?.message || "Lỗi giao tác database"],
+        });
+      } finally {
+        client.release();
+      }
+    }
+
+    return {
+      ok: true,
+      total: results.length,
+      successCount: results.filter((r) => r.signed).length,
+      results,
+    };
+  }
 }
+

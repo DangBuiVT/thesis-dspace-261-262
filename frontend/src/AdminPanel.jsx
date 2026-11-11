@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { SearchOutlined, DownloadOutlined, UploadOutlined } from "@ant-design/icons";
 import LibraryArchivePanel from "./LibraryArchivePanel.jsx";
 import { translateApiMessage } from "./i18n/api";
@@ -148,6 +148,12 @@ export default function AdminPanel({
   const tr = (value) => translateApiMessage(value, t);
   const [signatureStyle, setSignatureStyle] = useState(() => {
     return localStorage.getItem("bklib_signature_style") || "margin_strips";
+  });
+  const [watermarkPages, setWatermarkPages] = useState(() => {
+    return localStorage.getItem("bklib_watermark_pages") || "10";
+  });
+  const [watermarkEnabled, setWatermarkEnabled] = useState(() => {
+    return localStorage.getItem("bklib_watermark_enabled") !== "false";
   });
   const [activeTab, setActiveTab] = useState("users");
   const [users, setUsers] = useState([]);
@@ -1470,6 +1476,105 @@ export default function AdminPanel({
             </div>
           ))}
         </div>
+      </Card>
+
+      {/* CẤU HÌNH KÝ LOGO RIÊNG (WATERMARK HCMUT_NOBG BÍ MẬT) */}
+      <Card 
+        size="small" 
+        title={t("🛡️ Cấu hình Ký Watermark Logo riêng (HCMUT Watermark)")}
+        style={{ border: "1.5px solid #60a5fa", background: "#f0f9ff" }}
+      >
+        <Space direction="vertical" style={{ width: "100%" }} size="small">
+          <Paragraph style={{ margin: 0, fontSize: 13, color: "#1e3a8a" }}>
+            Hệ thống chèn watermark hình ảnh <strong>hcmut_nobg.png</strong>, độ mờ <strong>0.22 (opacity)</strong>, đóng dấu bí mật ở các trang được chỉ định (mặc định trang 10). Nếu file không có trang tương ứng sẽ tự động bỏ qua và hiển thị cảnh báo (warning).
+          </Paragraph>
+          
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 8, flexWrap: "wrap" }}>
+            <span style={{ fontWeight: 600, color: "#0f172a" }}>Trang đóng dấu bí mật:</span>
+            <Input
+              style={{ width: 280 }}
+              placeholder="VD: 10 hoặc 10, 15, 20"
+              value={watermarkPages}
+              onChange={(e) => {
+                const val = e.target.value;
+                setWatermarkPages(val);
+                localStorage.setItem("bklib_watermark_pages", val);
+              }}
+            />
+            <Button
+              type="primary"
+              size="middle"
+              onClick={async () => {
+                try {
+                  await fetch("/api/admin/settings", {
+                    method: "PATCH",
+                    headers: {
+                      "Content-Type": "application/json",
+                      ...authHeaders(auth?.token)
+                    },
+                    body: JSON.stringify({
+                      settings: {
+                        signature_watermark_pages: watermarkPages.trim() || "10"
+                      }
+                    })
+                  });
+                  localStorage.setItem("bklib_watermark_pages", watermarkPages.trim() || "10");
+                  message.success(t("Đã lưu trang ký watermark logo HCMUT thành công!"));
+                } catch {
+                  message.error(t("Lỗi khi lưu cấu hình"));
+                }
+              }}
+            >
+              Lưu số trang mặc định
+            </Button>
+          </div>
+
+          <div style={{ marginTop: 12, padding: "10px 14px", background: "#ffffff", borderRadius: 6, border: "1px dashed #93c5fd" }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "#0369a1", marginBottom: 6 }}>
+              🖼️ Mô phỏng con dấu Logo HCMUT bí mật (Opacity 0.22):
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+              <div
+                style={{
+                  position: "relative",
+                  width: 120,
+                  height: 160,
+                  background: "#ffffff",
+                  border: "1px solid #cbd5e1",
+                  borderRadius: 4,
+                  boxShadow: "0 2px 4px rgba(0,0,0,0.06)",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  overflow: "hidden"
+                }}
+              >
+                <div style={{ position: "absolute", top: 4, fontSize: 8, fontWeight: "bold", color: "#64748b" }}>
+                  TRANG {watermarkPages.split(/[,;\s]+/)[0] || "10"}
+                </div>
+                <img
+                  src="/hcmut_nobg.png"
+                  alt="HCMUT Watermark"
+                  style={{ width: 64, opacity: 0.22, pointerEvents: "none", filter: "contrast(1.1)" }}
+                  onError={(e) => {
+                    // Fallback visually if image loading differs
+                    e.currentTarget.style.display = "none";
+                  }}
+                />
+                <div style={{ position: "absolute", bottom: 4, fontSize: 7, color: "#0284c7", fontWeight: 600 }}>
+                  [Watermark 0.22]
+                </div>
+              </div>
+              <div style={{ fontSize: 12, color: "#334155" }}>
+                <div>• <strong>Hình ảnh watermark:</strong> <code>hcmut_nobg.png</code></div>
+                <div>• <strong>Độ mờ (Opacity):</strong> <Tag color="blue">0.22</Tag></div>
+                <div>• <strong>Vị trí áp dụng:</strong> Trang số <code>{watermarkPages || "10"}</code></div>
+                <div>• <strong>Cơ chế an toàn:</strong> Tự động kiểm tra tổng số trang PDF trước khi đóng dấu; cảnh báo nếu trang không tồn tại.</div>
+              </div>
+            </div>
+          </div>
+        </Space>
       </Card>
     </Space>
   );

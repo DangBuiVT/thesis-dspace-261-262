@@ -1,4 +1,4 @@
-﻿import { Readable } from 'node:stream';
+import { Readable } from 'node:stream';
 import { PdfStampingService, SignatureStyleType } from '../reviews/pdf-stamping.service';
 import {
   BadRequestException,
@@ -1991,10 +1991,16 @@ export class SubmissionsService {
       if (isSigned || style) {
         try {
           const certSerial = signatureEvent.rows[0]?.payload?.certificate_serial;
+          const watermarkPages = signatureEvent.rows[0]?.payload?.watermark_pages || 
+            (await this.db.query<{ value: string }>("SELECT value FROM system_settings WHERE key = 'signature_watermark_pages' LIMIT 1")).rows[0]?.value || "10";
           const stampedBytes = await this.pdfStampingService.stampPdfFile(
             row.file_url,
             requestedStyle,
-            { serial: certSerial }
+            { 
+              serial: certSerial,
+              watermarkPages,
+              enableLogoWatermark: true,
+            }
           );
           const stampedStream = Readable.from(Buffer.from(stampedBytes));
           return {
