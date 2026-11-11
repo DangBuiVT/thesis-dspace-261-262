@@ -22,6 +22,7 @@ import {
 import { DownloadOutlined, InboxOutlined } from "@ant-design/icons";
 import AdminPanel from "./AdminPanel.jsx";
 import LibraryArchivePanel from "./LibraryArchivePanel.jsx";
+import PdfPreview from "./components/pdf/PdfPreview.jsx";
 import { translateApiMessage } from "./i18n/api";
 import { LanguageSwitch, useI18n } from "./i18n/I18nProvider";
 import {
@@ -3085,24 +3086,29 @@ function App() {
         <div>
           <Title level={5}>{t("Files")}</Title>
           {Array.isArray(record.files) && record.files.length > 0 ? (
-            <ul style={{ margin: 0, paddingLeft: 20 }}>
-              {record.files.map((f) => (
-                <li key={f.id}>
-                  <Space wrap align="start">
-                    <Text strong style={{ wordBreak: "break-word", overflowWrap: "anywhere" }}>
-                      {f.fileName}
-                    </Text>
-                    <Tag>{f.fileType}</Tag>
-                    <Button
-                      type="primary"
-                      size="small"
-                      loading={fileOpenLoadingKey === `${record.id}:${f.id}`}
-                      onClick={() => void openProtectedSubmissionFile(record.id, f.id)}
-                    >{t("Open")}</Button>
-                  </Space>
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul style={{ margin: "0 0 12px 0", paddingLeft: 20 }}>
+                {record.files.map((f) => (
+                  <li key={f.id}>
+                    <Space wrap align="start">
+                      <Text strong style={{ wordBreak: "break-word", overflowWrap: "anywhere" }}>
+                        {f.fileName}
+                      </Text>
+                      <Tag>{f.fileType}</Tag>
+                      <Button
+                        type="primary"
+                        size="small"
+                        loading={fileOpenLoadingKey === `${record.id}:${f.id}`}
+                        onClick={() => void openProtectedSubmissionFile(record.id, f.id)}
+                      >{t("Open")}</Button>
+                    </Space>
+                  </li>
+                ))}
+              </ul>
+              <Divider style={{ margin: "12px 0" }} />
+              <Title level={5}>{t("PDF Preview")}</Title>
+              <PdfPreview submissionId={record.id} files={record.files} token={auth?.token} />
+            </>
           ) : (
             <Text type="secondary">{t("No files")}</Text>
           )}
@@ -4219,24 +4225,29 @@ function App() {
             </Card>
             <Title level={5}>{t("Files")}</Title>
               {Array.isArray(reviewerDetailRecord.files) && reviewerDetailRecord.files.length > 0 ? (
-                <ul style={{ margin: 0, paddingLeft: 20 }}>
-                  {reviewerDetailRecord.files.map((f) => (
-                    <li key={f.id}>
-                      <Space wrap align="start">
-                        <Text strong style={{ wordBreak: "break-word", overflowWrap: "anywhere" }}>
-                          {f.fileName}
-                        </Text>
-                        <Tag>{f.fileType}</Tag>
-                        <Button
-                          type="primary"
-                          size="small"
-                          loading={fileOpenLoadingKey === `${reviewerDetailRecord.id}:${f.id}`}
-                          onClick={() => void openProtectedSubmissionFile(reviewerDetailRecord.id, f.id)}
-                        >{t("Open")}</Button>
-                      </Space>
-                    </li>
-                  ))}
-                </ul>
+                <>
+                  <ul style={{ margin: "0 0 12px 0", paddingLeft: 20 }}>
+                    {reviewerDetailRecord.files.map((f) => (
+                      <li key={f.id}>
+                        <Space wrap align="start">
+                          <Text strong style={{ wordBreak: "break-word", overflowWrap: "anywhere" }}>
+                            {f.fileName}
+                          </Text>
+                          <Tag>{f.fileType}</Tag>
+                          <Button
+                            type="primary"
+                            size="small"
+                            loading={fileOpenLoadingKey === `${reviewerDetailRecord.id}:${f.id}`}
+                            onClick={() => void openProtectedSubmissionFile(reviewerDetailRecord.id, f.id)}
+                          >{t("Open")}</Button>
+                        </Space>
+                      </li>
+                    ))}
+                  </ul>
+                  <Divider style={{ margin: "12px 0" }} />
+                  <Title level={5}>{t("PDF Preview")}</Title>
+                  <PdfPreview submissionId={reviewerDetailRecord.id} files={reviewerDetailRecord.files} token={auth?.token} />
+                </>
               ) : (
                 <Text type="secondary">{t("No files")}</Text>
               )}
@@ -4348,29 +4359,34 @@ function App() {
             <div>
               <Title level={5}>{t("Files")}</Title>
               {Array.isArray(staffDetailRecord.files) && staffDetailRecord.files.length > 0 ? (
-                <ul style={{ margin: 0, paddingLeft: 20 }}>
-                  {staffDetailRecord.files.map((f) => (
-                    <li key={f.id}>
-                      <Space wrap align="start">
-                        <Text strong style={{ wordBreak: "break-word", overflowWrap: "anywhere" }}>
-                          {f.fileName}
-                        </Text>
-                        <Tag>{f.fileType}</Tag>
-                        <Button
-                          type="primary"
-                          size="small"
-                          loading={fileOpenLoadingKey === `${staffDetailRecord.id}:${f.id}`}
-                          onClick={() => void openProtectedSubmissionFile(staffDetailRecord.id, f.id)}
-                        >{t("Open")}</Button>
-                      </Space>
-                      <div>
-                        <Text type="secondary" style={{ fontSize: 12, wordBreak: "break-all" }}>
-                          {f.fileUrl}
-                        </Text>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
+                <>
+                  <ul style={{ margin: "0 0 12px 0", paddingLeft: 20 }}>
+                    {staffDetailRecord.files.map((f) => (
+                      <li key={f.id}>
+                        <Space wrap align="start">
+                          <Text strong style={{ wordBreak: "break-word", overflowWrap: "anywhere" }}>
+                            {f.fileName}
+                          </Text>
+                          <Tag>{f.fileType}</Tag>
+                          <Button
+                            type="primary"
+                            size="small"
+                            loading={fileOpenLoadingKey === `${staffDetailRecord.id}:${f.id}`}
+                            onClick={() => void openProtectedSubmissionFile(staffDetailRecord.id, f.id)}
+                          >{t("Open")}</Button>
+                        </Space>
+                        <div>
+                          <Text type="secondary" style={{ fontSize: 12, wordBreak: "break-all" }}>
+                            {f.fileUrl}
+                          </Text>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                  <Divider style={{ margin: "12px 0" }} />
+                  <Title level={5}>{t("PDF Preview")}</Title>
+                  <PdfPreview submissionId={staffDetailRecord.id} files={staffDetailRecord.files} token={auth?.token} />
+                </>
               ) : (
                 <Text type="secondary">{t("No files")}</Text>
               )}
