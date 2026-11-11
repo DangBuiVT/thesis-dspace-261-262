@@ -1447,14 +1447,16 @@ export default function AdminPanel({
 
               {signatureStyle === "margin_strips" && (
                 <>
-                  <div style={{ position: "absolute", left: 2, top: 10, bottom: 10, width: 16, borderRight: "2px solid #00529c", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <div style={{ writingMode: "vertical-rl", transform: "rotate(180deg)", fontSize: 7, fontWeight: "bold", color: "#003366", letterSpacing: 0.5, whiteSpace: "nowrap" }}>
-                      ĐH BÁCH KHOA TP.HCM - HCMUT
+                  <div style={{ position: "absolute", left: 2, top: 10, bottom: 10, width: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <div style={{ writingMode: "vertical-rl", transform: "rotate(180deg)", display: "flex", alignItems: "center", gap: 3, fontSize: 7, fontWeight: "bold", color: "#595959", opacity: 0.6, letterSpacing: 0.5, whiteSpace: "nowrap" }}>
+                      <img src="/hcmut_nobg.png" alt="" style={{ width: 9, height: 9, transform: "rotate(90deg)", filter: "grayscale(1)" }} />
+                      Truong Dai hoc Bach Khoa - HCMUT
                     </div>
                   </div>
-                  <div style={{ position: "absolute", right: 2, top: 10, bottom: 10, width: 16, borderLeft: "2px solid #00529c", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <div style={{ writingMode: "vertical-rl", fontSize: 7, fontWeight: "bold", color: "#003366", letterSpacing: 0.5, whiteSpace: "nowrap" }}>
-                      ĐH BÁCH KHOA TP.HCM - HCMUT
+                  <div style={{ position: "absolute", right: 2, top: 10, bottom: 10, width: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <div style={{ writingMode: "vertical-rl", display: "flex", alignItems: "center", gap: 3, fontSize: 7, fontWeight: "bold", color: "#595959", opacity: 0.6, letterSpacing: 0.5, whiteSpace: "nowrap" }}>
+                      <img src="/hcmut_nobg.png" alt="" style={{ width: 9, height: 9, transform: "rotate(90deg)", filter: "grayscale(1)" }} />
+                      Truong Dai hoc Bach Khoa - HCMUT
                     </div>
                   </div>
                 </>

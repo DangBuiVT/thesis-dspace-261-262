@@ -16,18 +16,23 @@ export interface StampingResult {
 @Injectable()
 export class PdfStampingService {
   private readonly institutionText = "DAI HOC BACH KHOA THANH PHO HO CHI MINH - HCMUT";
+  /** Chữ trên dải 2 bên lề (đi kèm logo xám). */
+  private readonly marginStripText = "Truong Dai hoc Bach Khoa - HCMUT";
+  /** Màu xám dùng chung cho chữ và logo ở dải 2 bên lề. */
+  private readonly marginGray = rgb(0.35, 0.35, 0.35);
+  private readonly marginOpacity = 0.22;
 
   /**
-   * Helper to resolve the path of hcmut_nobg.png
+   * Helper to resolve the path of hcmut_nobg.png (hoặc bản xám hcmut_gray.png)
    */
-  private resolveLogoPath(): string | null {
+  private resolveLogoPath(fileName = "hcmut_nobg.png"): string | null {
     const candidatePaths = [
-      path.resolve(__dirname, "../assets/hcmut_nobg.png"),
-      path.resolve(__dirname, "../../src/assets/hcmut_nobg.png"),
-      path.resolve(process.cwd(), "src/assets/hcmut_nobg.png"),
-      path.resolve(process.cwd(), "uploads/assets/hcmut_nobg.png"),
-      path.resolve(process.cwd(), "hcmut_nobg.png"),
-      path.resolve(process.cwd(), "../hcmut_nobg.png"),
+      path.resolve(__dirname, "../assets", fileName),
+      path.resolve(__dirname, "../../src/assets", fileName),
+      path.resolve(process.cwd(), "src/assets", fileName),
+      path.resolve(process.cwd(), "uploads/assets", fileName),
+      path.resolve(process.cwd(), fileName),
+      path.resolve(process.cwd(), "..", fileName),
     ];
 
     for (const p of candidatePaths) {
@@ -112,34 +117,81 @@ export class PdfStampingService {
       const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
       const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
+      // Logo xám cho dải 2 bên lề (nhúng 1 lần, dùng lại cho mọi trang)
+      let grayLogo: Awaited<ReturnType<PDFDocument["embedPng"]>> | null = null;
+      if (style === "margin_strips") {
+        const grayLogoPath = this.resolveLogoPath("hcmut_gray.png");
+        if (grayLogoPath) {
+          try {
+            grayLogo = await pdfDoc.embedPng(await readFile(grayLogoPath));
+          } catch (e) {
+            console.error("Failed to embed gray logo for margin strips:", e);
+          }
+        }
+      }
+
       for (const page of pages) {
         const { width, height } = page.getSize();
         const text1 = this.institutionText;
 
         if (style === "margin_strips") {
-          const marginFontSize = 20;
-          const textWidth = helveticaBold.widthOfTextAtSize(text1, marginFontSize);
-          const marginOffset = 30; // Kéo lề vào trong để chữ size 20 không bị cắt mép
+          // Dải lề: [logo xám] + "Truong Dai hoc Bach Khoa - HCMUT", cùng màu xám & độ mờ
+          const fontSize = 16;
+          const stripText = this.marginStripText;
+          const textWidth = helveticaBold.widthOfTextAtSize(stripText, fontSize);
+          const marginOffset = 30; // khoảng cách đường baseline tới mép trang
+          const capHeight = fontSize * 0.72;
+          const logoSize = fontSize * 1.6; // cạnh dọc theo dải
+          const logoThick = grayLogo ? (grayLogo.height / grayLogo.width) * logoSize : 0; // cạnh vuông góc dải
+          const gap = grayLogo ? fontSize * 0.5 : 0;
+          const groupLength = (grayLogo ? logoSize : 0) + gap + textWidth;
 
-          // Dải lề trái: chữ chạy dọc từ dưới lên
-          page.drawText(text1, {
+          // ── Dải lề trái: đọc từ dưới lên (xoay 90°), logo ở dưới rồi tới chữ ──
+          const leftStart = height / 2 - groupLength / 2;
+          const leftTextCenterX = marginOffset - capHeight / 2;
+          if (grayLogo) {
+            // xoay 90°: chiều rộng ảnh chạy theo +y, chiều cao ảnh chạy theo -x
+            page.drawImage(grayLogo, {
+              x: leftTextCenterX + logoThick / 2,
+              y: leftStart,
+              width: logoSize,
+              height: logoThick,
+              opacity: this.marginOpacity,
+              rotate: degrees(90),
+            });
+          }
+          page.drawText(stripText, {
             x: marginOffset,
-            y: height / 2 - textWidth / 2,
-            size: marginFontSize,
+            y: leftStart + (grayLogo ? logoSize + gap : 0),
+            size: fontSize,
             font: helveticaBold,
-            color: rgb(0, 0.2, 0.4),
-            opacity: 0.12,
+            color: this.marginGray,
+            opacity: this.marginOpacity,
             rotate: degrees(90),
           });
 
-          // Dải lề phải: chữ chạy dọc từ trên xuống
-          page.drawText(text1, {
-            x: width - marginOffset,
-            y: height / 2 + textWidth / 2,
-            size: marginFontSize,
+          // ── Dải lề phải: đọc từ trên xuống (xoay -90°), logo ở trên rồi tới chữ ──
+          const rightStart = height / 2 + groupLength / 2;
+          const rightBaseX = width - marginOffset;
+          const rightTextCenterX = rightBaseX + capHeight / 2;
+          if (grayLogo) {
+            // xoay -90°: chiều rộng ảnh chạy theo -y, chiều cao ảnh chạy theo +x
+            page.drawImage(grayLogo, {
+              x: rightTextCenterX - logoThick / 2,
+              y: rightStart,
+              width: logoSize,
+              height: logoThick,
+              opacity: this.marginOpacity,
+              rotate: degrees(-90),
+            });
+          }
+          page.drawText(stripText, {
+            x: rightBaseX,
+            y: rightStart - (grayLogo ? logoSize + gap : 0),
+            size: fontSize,
             font: helveticaBold,
-            color: rgb(0, 0.2, 0.4),
-            opacity: 0.12,
+            color: this.marginGray,
+            opacity: this.marginOpacity,
             rotate: degrees(-90),
           });
         } else if (style === "diagonal") {

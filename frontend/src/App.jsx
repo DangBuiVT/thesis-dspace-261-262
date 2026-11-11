@@ -4650,14 +4650,16 @@ function App() {
 
                     {previewStyle === "margin_strips" && (
                       <>
-                        <div style={{ position: "absolute", left: 2, top: 8, bottom: 8, width: 12, borderRight: "1.5px solid #00529c", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                          <div style={{ writingMode: "vertical-rl", transform: "rotate(180deg)", fontSize: 6, fontWeight: "bold", color: "#003366", letterSpacing: 0.5, whiteSpace: "nowrap" }}>
-                            ĐH BÁCH KHOA - HCMUT
+                        <div style={{ position: "absolute", left: 2, top: 8, bottom: 8, width: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <div style={{ writingMode: "vertical-rl", transform: "rotate(180deg)", display: "flex", alignItems: "center", gap: 2, fontSize: 6, fontWeight: "bold", color: "#595959", opacity: 0.6, letterSpacing: 0.5, whiteSpace: "nowrap" }}>
+                            <img src="/hcmut_nobg.png" alt="" style={{ width: 8, height: 8, transform: "rotate(90deg)", filter: "grayscale(1)" }} />
+                            Truong Dai hoc Bach Khoa - HCMUT
                           </div>
                         </div>
-                        <div style={{ position: "absolute", right: 2, top: 8, bottom: 8, width: 12, borderLeft: "1.5px solid #00529c", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                          <div style={{ writingMode: "vertical-rl", fontSize: 6, fontWeight: "bold", color: "#003366", letterSpacing: 0.5, whiteSpace: "nowrap" }}>
-                            ĐH BÁCH KHOA - HCMUT
+                        <div style={{ position: "absolute", right: 2, top: 8, bottom: 8, width: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <div style={{ writingMode: "vertical-rl", display: "flex", alignItems: "center", gap: 2, fontSize: 6, fontWeight: "bold", color: "#595959", opacity: 0.6, letterSpacing: 0.5, whiteSpace: "nowrap" }}>
+                            <img src="/hcmut_nobg.png" alt="" style={{ width: 8, height: 8, transform: "rotate(90deg)", filter: "grayscale(1)" }} />
+                            Truong Dai hoc Bach Khoa - HCMUT
                           </div>
                         </div>
                       </>

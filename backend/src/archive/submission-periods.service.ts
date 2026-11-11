@@ -262,6 +262,100 @@ export class SubmissionPeriodsService {
     };
   }
 
+  // ───────────── Admin: xem & dùng mọi khoa / học kỳ / đợt (kể cả đã đóng hoặc ẩn) ─────────────
+
+  async listAllFacultiesForAdmin() {
+    const result = await this.db.query<{ id: string; name: string }>(
+      `SELECT f.id::text AS id, f.name
+       FROM faculties f
+       WHERE f.status = 'active'
+       ORDER BY f.name ASC`
+    );
+    return result.rows.map((row) => ({ id: row.id, name: row.name, universityName: HCMUT_NAME }));
+  }
+
+  async listAllSemestersForAdmin(facultyId: string) {
+    const result = await this.db.query<{ id: string; name: string; faculty_id: string; faculty_name: string }>(
+      `SELECT s.id::text AS id, s.name, f.id::text AS faculty_id, f.name AS faculty_name
+       FROM semesters s
+       JOIN faculties f ON f.id = s.faculty_id
+       WHERE s.faculty_id = $1::uuid
+       ORDER BY s.name ASC`,
+      [facultyId]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      facultyId: row.faculty_id,
+      facultyName: row.faculty_name,
+      universityName: HCMUT_NAME
+    }));
+  }
+
+  async listAllPeriodsForAdmin(facultyId: string, semesterId: string) {
+    const result = await this.db.query(
+      `SELECT sp.id::text AS id, sp.name, sp.opens_at, sp.closes_at, sp.status, sp.allow_resubmit,
+              (${this.openPeriodFilter()}) AS is_open,
+              f.id::text AS faculty_id, f.name AS faculty_name,
+              s.id::text AS semester_id, s.name AS semester_name
+       FROM submission_periods sp
+       JOIN semesters s ON s.id = sp.semester_id
+       JOIN faculties f ON f.id = s.faculty_id
+       WHERE s.faculty_id = $1::uuid AND sp.semester_id = $2::uuid
+       ORDER BY sp.opens_at DESC`,
+      [facultyId, semesterId]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      opensAt: row.opens_at,
+      closesAt: row.closes_at,
+      status: row.status,
+      isOpen: Boolean(row.is_open),
+      allowResubmit: row.allow_resubmit,
+      facultyId: row.faculty_id,
+      facultyName: row.faculty_name,
+      semesterId: row.semester_id,
+      semesterName: row.semester_name,
+      universityName: HCMUT_NAME
+    }));
+  }
+
+  /** Như resolveOpenPeriod nhưng không yêu cầu đợt đang mở — chỉ dùng cho Admin. */
+  async resolvePeriodAnyState(periodId: string): Promise<OpenPeriodContext> {
+    if (periodId.startsWith("a2000001-") || periodId.startsWith("period-")) {
+      return this.resolveOpenPeriod(periodId);
+    }
+    const result = await this.db.query(
+      `SELECT sp.id, sp.name AS period_name, sp.allow_resubmit,
+              f.id::text AS faculty_id, f.name AS faculty_name,
+              s.id::text AS semester_id, s.name AS semester_name
+       FROM submission_periods sp
+       JOIN semesters s ON s.id = sp.semester_id
+       JOIN faculties f ON f.id = s.faculty_id
+       WHERE sp.id = $1::uuid
+       LIMIT 1`,
+      [periodId]
+    );
+    const row = result.rows[0];
+    if (!row) {
+      throw new BadRequestException("Submission period does not exist");
+    }
+    return {
+      periodId: row.id,
+      periodName: row.period_name,
+      facultyId: row.faculty_id,
+      facultyCode: "",
+      facultyName: row.faculty_name,
+      semesterId: row.semester_id,
+      semesterCode: "",
+      semesterName: row.semester_name,
+      universityId: "",
+      universityName: HCMUT_NAME,
+      allowResubmit: row.allow_resubmit
+    };
+  }
+
   async assertPeriodAllowsResubmit(periodId: string | null) {
     if (!periodId) {
       return;
