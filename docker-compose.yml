@@ -1,5 +1,11 @@
 name: thesis-submission-system
 
+x-backend-image: &backend-image
+  image: thesis-portal-backend:local
+  build:
+    context: ./backend
+    dockerfile: Dockerfile
+
 services:
   postgres:
     image: postgres:16
