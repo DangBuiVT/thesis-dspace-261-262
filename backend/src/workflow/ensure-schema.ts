@@ -23,6 +23,25 @@ const STRUCTURAL_FIELDS: Array<{
 ];
 
 export async function ensurePortalSchema(db: Pool) {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS submission_signed_files (
+      id UUID PRIMARY KEY,
+      submission_id UUID NOT NULL,
+      source_file_id UUID,
+      file_name TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      sha256 TEXT NOT NULL,
+      signature_style TEXT,
+      certificate_serial TEXT,
+      issuer TEXT,
+      signed_at TIMESTAMPTZ NOT NULL,
+      tsa_url TEXT,
+      tsa_status TEXT,
+      tsa_time TIMESTAMPTZ,
+      signer_sub TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
   await db.query(`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS current_step INT`);
   await db.query(`DROP INDEX IF EXISTS idx_submissions_one_active_per_student`);
   try {

@@ -42,6 +42,10 @@ services:
       GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL:-http://localhost:3000/auth/google/callback}
       GOOGLE_ALLOWED_DOMAIN: ${GOOGLE_ALLOWED_DOMAIN:-hcmut.edu.vn}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      TSA_URL: ${TSA_URL:-https://freetsa.org/tsr}
+      SIGNING_KEY_PATH: ${SIGNING_KEY_PATH:-}
+      SIGNING_CERT_PATH: ${SIGNING_CERT_PATH:-}
+      SIGNING_CHAIN_PATH: ${SIGNING_CHAIN_PATH:-}
     ports:
       - "3000:3000"
     volumes:

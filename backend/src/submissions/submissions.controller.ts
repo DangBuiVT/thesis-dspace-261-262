@@ -210,6 +210,18 @@ export class SubmissionsController {
     return this.submissionsService.getStudentSubmissions(studentId);
   }
 
+  @Get(":submissionId/signature-status")
+  @RequirePermissions(
+    "review_academic",
+    "library_intake",
+    "director_approval",
+    "view_all_submissions",
+    "configure_system",
+  )
+  signatureStatus(@Param("submissionId") submissionId: string) {
+    return this.submissionsService.getSignatureStatus(submissionId);
+  }
+
   @Get(":submissionId/files/:fileId/download")
   @RequirePermissions(
     "submit_thesis",

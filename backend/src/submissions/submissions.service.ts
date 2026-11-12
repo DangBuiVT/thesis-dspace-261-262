@@ -1,4 +1,5 @@
 import { Readable } from 'node:stream';
+import { ArchiveSigningService } from '../signing/archive-signing.service';
 import { PdfStampingService, SignatureStyleType } from '../reviews/pdf-stamping.service';
 import {
   BadRequestException,
@@ -72,6 +73,7 @@ export class SubmissionsService {
     private readonly workflow: WorkflowService,
     private readonly groups: GroupsService,
     private readonly pdfStampingService: PdfStampingService,
+    private readonly archiveSigning: ArchiveSigningService,
   ) {}
 
   private isAdminActor(actor: JwtPayload): boolean {
@@ -2070,6 +2072,10 @@ export class SubmissionsService {
     return result.rows;
   }
 
+  getSignatureStatus(submissionId: string) {
+    return this.archiveSigning.status(submissionId);
+  }
+
   async getSubmissionFileStream(
     user: JwtPayload,
     submissionId: string,
@@ -2143,6 +2149,16 @@ export class SubmissionsService {
       await access(row.file_url, fsConstants.R_OK);
     } catch {
       throw new NotFoundException("File missing on server");
+    }
+
+    // Bản đã lưu chiểu (đã đóng dấu + ký PAdES + dấu thời gian) là file cố định, trả nguyên bản.
+    const signedCopy = await this.archiveSigning.latestSignedPath(submissionId, fileId);
+    if (signedCopy) {
+      return {
+        stream: createReadStream(signedCopy.filePath),
+        contentType: "application/pdf",
+        fileName: `[SIGNED]_${signedCopy.fileName}`,
+      };
     }
 
     const contentType = this.contentTypeForFileName(row.file_name);

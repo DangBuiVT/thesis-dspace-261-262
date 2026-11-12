@@ -15,7 +15,7 @@ import type { JwtPayload } from "../auth/jwt.strategy";
 import { GroupsService } from "../workflow/groups.service";
 import { WorkflowService } from "../workflow/workflow.service";
 import { ReviewActionDto } from "./dto/review-action.dto";
-import { buildIntegrityEvidence } from "../common/integrity-evidence";
+import { ArchiveSigningService, resolveSignatureStyle, signedEvidence } from "../signing/archive-signing.service";
 import { PdfStampingService, SignatureStyleType } from "./pdf-stamping.service";
 import {
   SubmissionStatus,
@@ -43,6 +43,7 @@ export class ReviewsService {
     private readonly workflow: WorkflowService,
     private readonly groups: GroupsService,
     private readonly pdfStamping: PdfStampingService,
+    private readonly archiveSigning: ArchiveSigningService,
   ) { }
 
   private libraryIntakeReadyClause() {
@@ -637,8 +638,14 @@ export class ReviewsService {
 
         if (dto.action === ReviewActionType.ARCHIVE) {
           // Tính toán SHA-256 Hash toàn vẹn cho chữ ký số lưu chiểu
-          const signedAt = new Date().toISOString();
-          const evidence = buildIntegrityEvidence(dto.submissionId, user.sub, signedAt, "BKlib-DSpace");
+          const archived = await this.archiveSigning.signArchivedPdf({
+            submissionId: dto.submissionId,
+            actorSub: user.sub,
+            actorName: user.displayName || user.username || "Thư viện",
+            style: resolveSignatureStyle(dto.signatureStyle || (dto.metadata as any)?.signatureStyle),
+            watermarkPages: dto.watermarkPages || (dto.metadata as any)?.watermarkPages || (await this.db.query<{ value: string }>("SELECT value FROM system_settings WHERE key = 'signature_watermark_pages' LIMIT 1")).rows[0]?.value || "10",
+          });
+          const evidence = archived ? signedEvidence(archived) : null;
 
           await client.query(
             `UPDATE submissions
@@ -647,9 +654,9 @@ export class ReviewsService {
             [dto.submissionId]
           );
 
-          await client.query(
+          if (evidence) await client.query(
             `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
-             VALUES ($1, $2, $3, 'director', 'digital_signature_signed', $4::jsonb)`,
+            VALUES ($1, $2, $3, 'director', 'digital_signature_signed', $4::jsonb)`,
             [
               randomUUID(),
               dto.submissionId,
@@ -660,7 +667,7 @@ export class ReviewsService {
                 institution_text: "ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT",
                 signed_pages_scope: "Tất cả các trang (100% pages)",
                 signer_name: user.displayName || user.username || "ThS. Lê Hoàng (Thư viện)",
-                signed_at: new Date().toISOString(),
+                signed_at: evidence?.signed_at ?? null,
                 signature_style: dto.signatureStyle || (dto.metadata as any)?.signatureStyle || "margin_strips",
                 watermark_pages: dto.watermarkPages || (dto.metadata as any)?.watermarkPages || (await this.db.query<{ value: string }>("SELECT value FROM system_settings WHERE key = 'signature_watermark_pages' LIMIT 1")).rows[0]?.value || "10",
                 signature_style_name: (dto.signatureStyle === "diagonal" || (dto.metadata as any)?.signatureStyle === "diagonal") 
@@ -1089,8 +1096,14 @@ export class ReviewsService {
           );
 
           if (dto.action === ReviewActionType.ARCHIVE) {
-            const signedAt = new Date().toISOString();
-            const evidence = buildIntegrityEvidence(dto.submissionId, user.sub, signedAt, "BKlib-DSpace");
+            const archived = await this.archiveSigning.signArchivedPdf({
+              submissionId: dto.submissionId,
+              actorSub: user.sub,
+              actorName: user.displayName || user.username || "Thư viện",
+              style: resolveSignatureStyle(dto.signatureStyle || (dto.metadata as any)?.signatureStyle),
+              watermarkPages: dto.watermarkPages || (dto.metadata as any)?.watermarkPages || (await this.db.query<{ value: string }>("SELECT value FROM system_settings WHERE key = 'signature_watermark_pages' LIMIT 1")).rows[0]?.value || "10",
+            });
+            const evidence = archived ? signedEvidence(archived) : null;
 
             await client.query(
               `UPDATE submissions
@@ -1099,9 +1112,9 @@ export class ReviewsService {
               [dto.submissionId]
             );
 
-            await client.query(
+            if (evidence) await client.query(
               `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
-               VALUES ($1, $2, $3, 'director', 'digital_signature_signed', $4::jsonb)`,
+              VALUES ($1, $2, $3, 'director', 'digital_signature_signed', $4::jsonb)`,
               [
                 randomUUID(),
                 dto.submissionId,
@@ -1112,7 +1125,7 @@ export class ReviewsService {
                   institution_text: "ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT",
                   signed_pages_scope: "Tất cả các trang (100% pages)",
                   signer_name: user.displayName || user.username || "Admin (Bảo lưu)",
-                  signed_at: new Date().toISOString(),
+                  signed_at: evidence?.signed_at ?? null,
                   signature_style: dto.signatureStyle || (dto.metadata as any)?.signatureStyle || "margin_strips",
                   watermark_pages: dto.watermarkPages || (dto.metadata as any)?.watermarkPages || (await this.db.query<{ value: string }>("SELECT value FROM system_settings WHERE key = 'signature_watermark_pages' LIMIT 1")).rows[0]?.value || "10",
                   signature_style_name:
@@ -1344,8 +1357,15 @@ export class ReviewsService {
       const client = await this.db.connect();
       try {
         await client.query("BEGIN");
-        const signedAt = new Date().toISOString();
-        const evidence = buildIntegrityEvidence(subId, user.sub, signedAt, "BKlib-LegacyBatch");
+        const archived = await this.archiveSigning.signArchivedPdf({
+          submissionId: subId,
+          sourceFileId: file?.id,
+          actorSub: user.sub,
+          actorName: user.displayName || user.username || "Quản trị viên",
+          style: resolveSignatureStyle(signatureStyle),
+          watermarkPages: defaultWatermarkPages,
+        });
+        const evidence = archived ? signedEvidence(archived) : null;
 
         // Đảm bảo bài nộp chuyển sang trạng thái đã lưu chiểu nếu đang draft/reviewing/approved
         await client.query(
@@ -1356,9 +1376,9 @@ export class ReviewsService {
           [subId]
         );
 
-        await client.query(
+        if (evidence) await client.query(
           `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
-           VALUES ($1, $2, $3, 'admin', 'digital_signature_signed', $4::jsonb)`,
+          VALUES ($1, $2, $3, 'admin', 'digital_signature_signed', $4::jsonb)`,
           [
             randomUUID(),
             subId,
@@ -1370,7 +1390,7 @@ export class ReviewsService {
               institution_text: "ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT",
               signed_pages_scope: "Tất cả các trang (100% pages)",
               signer_name: user.displayName || user.username || "Quản trị viên (Ký số hàng loạt)",
-              signed_at: new Date().toISOString(),
+              signed_at: evidence?.signed_at ?? null,
               signature_style: signatureStyle,
               watermark_pages: defaultWatermarkPages,
               signature_style_name:
@@ -1403,8 +1423,8 @@ export class ReviewsService {
           submissionId: subId,
           title: sub.title,
           status: "archived",
-          signed: true,
-          warnings,
+          signed: evidence !== null,
+          warnings: evidence ? warnings : [...warnings, "Không có file PDF để ký số"],
         });
       } catch (err: any) {
         await client.query("ROLLBACK");

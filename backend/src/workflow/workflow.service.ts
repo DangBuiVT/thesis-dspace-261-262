@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException, OnModuleInit } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { buildIntegrityEvidence } from "../common/integrity-evidence";
+import { ArchiveSigningService, signedEvidence } from "../signing/archive-signing.service";
 import type { PoolClient } from "pg";
 import { createPgPool } from "../users/db-pool";
 import { ensurePortalSchema } from "./ensure-schema";
@@ -19,6 +19,8 @@ const ROLES = new Set<WorkflowRole>(["reviewer", "library_staff", "director"]);
 @Injectable()
 export class WorkflowService implements OnModuleInit {
   private readonly db = createPgPool();
+
+  constructor(private readonly archiveSigning: ArchiveSigningService) {}
 
   async onModuleInit() {
     await ensurePortalSchema(this.db);
@@ -187,11 +189,17 @@ export class WorkflowService implements OnModuleInit {
     const pagesSetting = await client.query<{ value: string }>(
       `SELECT value FROM system_settings WHERE key = 'signature_watermark_pages' LIMIT 1`
     );
-    const signedAt = new Date().toISOString();
-    const evidence = buildIntegrityEvidence(submissionId, actor?.sub || "system", signedAt, "BKlib-DSpace");
+    const archived = await this.archiveSigning.signArchivedPdf({
+      submissionId,
+      actorSub: actor?.sub || "system",
+      actorName: actor?.displayName || actor?.username || "BKlib Admin",
+      style,
+      watermarkPages: pagesSetting.rows[0]?.value || "10",
+    });
+    const evidence = archived ? signedEvidence(archived) : null;
     const actorRole = actor?.role || "system";
 
-    await client.query(
+    if (evidence) await client.query(
       `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
        VALUES ($1, $2::uuid, $3, $4, 'digital_signature_signed', $5::jsonb)`,
       [
@@ -206,7 +214,7 @@ export class WorkflowService implements OnModuleInit {
           institution_text: "ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT",
           signed_pages_scope: "Tất cả các trang (100% pages)",
           signer_name: actor?.displayName || actor?.username || "BKlib Admin",
-          signed_at: signedAt,
+          signed_at: archived?.signedAt.toISOString() ?? null,
           signature_style: style,
           watermark_pages: pagesSetting.rows[0]?.value || "10",
           signature_style_name:
