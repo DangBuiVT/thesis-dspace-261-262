@@ -1,0 +1,111 @@
+{
+  "capturedAt": "2026-11-04T13:11:42.992Z",
+  "timezone": "Asia/Ho_Chi_Minh",
+  "baselineCommit": "4f7a73df",
+  "target": "Local NestJS + PostgreSQL + Vite + Mailpit",
+  "screenshots": [
+    "before-editor.png",
+    "after-editor.png",
+    "after-history.png",
+    "after-final-editor.png",
+    "after-mobile-vi.png",
+    "after-student.png",
+    "mailpit-inbox.png",
+    "wireframes.png",
+    "wireframe-01.png",
+    "wireframe-02.png",
+    "wireframe-03.png"
+  ],
+  "checks": {
+    "archivedInPortal": true,
+    "dspaceDeferred": true,
+    "descriptionPreserved": true,
+    "academicApprovalPreserved": true,
+    "metadataChangeRecorded": true,
+    "returnRecorded": true
+  },
+  "emails": [
+    {
+      "subject": "[Cổng luận văn / Thesis Portal] Giám đốc thư viện đã duyệt và lưu trữ luận văn | The library director approved and archived your thesis",
+      "to": [
+        "nhan-demo-mw24xqhp@hcmut.edu.vn"
+      ],
+      "created": "2026-11-04T13:11:36.803Z"
+    },
+    {
+      "subject": "[Cổng luận văn / Thesis Portal] Thư viện đã duyệt luận văn | Library staff approved your thesis",
+      "to": [
+        "nhan-demo-mw24xqhp@hcmut.edu.vn"
+      ],
+      "created": "2026-11-04T13:11:36.749Z"
+    },
+    {
+      "subject": "[Cổng luận văn / Thesis Portal] Luận văn đã duyệt — sẵn sàng lưu trữ | Thesis approved — ready to archive",
+      "to": [
+        "director1@hcmut.edu.vn"
+      ],
+      "created": "2026-11-04T13:11:36.726Z"
+    },
+    {
+      "subject": "[Thesis Portal] Returned to Editor | Yêu cầu thư viện chỉnh sửa",
+      "to": [
+        "library1@hcmut.edu.vn"
+      ],
+      "created": "2026-11-04T13:11:30.599Z"
+    },
+    {
+      "subject": "[Cổng luận văn / Thesis Portal] Luận văn đã duyệt — sẵn sàng lưu trữ | Thesis approved — ready to archive",
+      "to": [
+        "director1@hcmut.edu.vn"
+      ],
+      "created": "2026-11-04T13:11:25.301Z"
+    },
+    {
+      "subject": "[Cổng luận văn / Thesis Portal] Thư viện đã duyệt luận văn | Library staff approved your thesis",
+      "to": [
+        "nhan-demo-mw24xqhp@hcmut.edu.vn"
+      ],
+      "created": "2026-11-04T13:11:25.277Z"
+    },
+    {
+      "subject": "[Cổng luận văn / Thesis Portal] Tất cả phản biện đã duyệt | All reviewers approved your thesis",
+      "to": [
+        "nhan-demo-mw24xqhp@hcmut.edu.vn"
+      ],
+      "created": "2026-11-04T13:11:10.181Z"
+    },
+    {
+      "subject": "[Cổng luận văn / Thesis Portal] Luận văn sẵn sàng tiếp nhận thư viện | Thesis ready for library intake",
+      "to": [
+        "library1@hcmut.edu.vn"
+      ],
+      "created": "2026-11-04T13:11:10.163Z"
+    },
+    {
+      "subject": "[Cổng luận văn / Thesis Portal] Phản biện đã duyệt luận văn | A reviewer approved your thesis",
+      "to": [
+        "nhan-demo-mw24xqhp@hcmut.edu.vn"
+      ],
+      "created": "2026-11-04T13:11:10.161Z"
+    },
+    {
+      "subject": "[Cổng luận văn / Thesis Portal] Có luận văn mới cần phản biện | New thesis awaiting your review",
+      "to": [
+        "reviewer1@hcmut.edu.vn"
+      ],
+      "created": "2026-11-04T13:11:10.11Z"
+    },
+    {
+      "subject": "[Cổng luận văn / Thesis Portal] Luận văn của bạn đã được nộp | Your thesis was submitted",
+      "to": [
+        "nhan-demo-mw24xqhp@hcmut.edu.vn"
+      ],
+      "created": "2026-11-04T13:11:10.091Z"
+    }
+  ],
+  "limits": [
+    "Actual PAdES signing is not implemented",
+    "Live DSpace publication is not verified",
+    "Mailpit confirms local SMTP capture only"
+  ]
+}

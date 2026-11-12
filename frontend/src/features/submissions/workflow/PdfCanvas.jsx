@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Alert, Button, Space, Spin } from "antd";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?worker&url";
-import { useI18n } from "../../i18n/I18nProvider";
+import { useI18n } from "../../../i18n/I18nProvider";
 
 GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -20,14 +20,13 @@ export default function PdfCanvas({ url }) {
 
   useEffect(() => {
     const observer = new ResizeObserver(([entry]) => {
+      // contentRect already excludes padding. Hidden Ant tabs report zero width;
+      // keep their last size instead of starting another render in the background.
       const measured = Math.floor(entry.contentRect.width);
-      if (measured > 0) {
+      if (measured > 0)
         setWidth((previous) => (previous === measured ? previous : measured));
-      }
     });
-    if (containerRef.current) {
-      observer.observe(containerRef.current);
-    }
+    observer.observe(containerRef.current);
     return () => observer.disconnect();
   }, []);
 
@@ -72,7 +71,6 @@ export default function PdfCanvas({ url }) {
         const viewport = page.getViewport({ scale: width / base.width });
         const ratio = Math.min(window.devicePixelRatio || 1, 2);
         const canvas = canvasRef.current;
-        if (!canvas) return;
         canvas.width = Math.ceil(viewport.width * ratio);
         canvas.height = Math.ceil(viewport.height * ratio);
         canvas.style.width = `${viewport.width}px`;
@@ -100,7 +98,7 @@ export default function PdfCanvas({ url }) {
 
   return (
     <>
-      <Space wrap style={{ marginBottom: 12, fontSize: 13 }}>
+      <Space wrap className="pdf-pagination">
         <Button
           aria-label={t("Previous page")}
           disabled={!pdf || pageNumber <= 1}
@@ -108,12 +106,12 @@ export default function PdfCanvas({ url }) {
         >
           {t("Previous page")}
         </Button>
-        <span aria-live="polite" style={{ fontWeight: 500 }}>
+        <span aria-live="polite">
           {pdf
             ? t("Page {{page}} of {{total}}", {
-              page: pageNumber,
-              total: pdf.numPages,
-            })
+                page: pageNumber,
+                total: pdf.numPages,
+              })
             : t("Loading PDF...")}
         </span>
         <Button
@@ -129,7 +127,6 @@ export default function PdfCanvas({ url }) {
           type="error"
           showIcon
           message={t(error)}
-          style={{ marginBottom: 12 }}
           action={
             <Button onClick={() => setAttempt((value) => value + 1)}>
               {t("Retry")}
@@ -141,30 +138,10 @@ export default function PdfCanvas({ url }) {
         ref={containerRef}
         className="pdf-canvas-container"
         aria-busy={!ready && !error}
-        style={{
-          position: "relative",
-          boxSizing: "border-box",
-          width: "100%",
-          minHeight: 200,
-          maxHeight: 650,
-          overflow: "auto",
-          padding: 12,
-          border: "1px solid #dce3eb",
-          borderRadius: 6,
-          background: "#e8edf3",
-        }}
       >
         {!ready && !error && (
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              display: "grid",
-              placeItems: "center",
-              pointerEvents: "none",
-            }}
-          >
-            <Spin tip={t("Rendering...")} />
+          <div className="pdf-render-loading">
+            <Spin />
           </div>
         )}
         <canvas
@@ -172,17 +149,11 @@ export default function PdfCanvas({ url }) {
           role="img"
           aria-label={t("PDF preview")}
           data-rendered={ready && !error ? "true" : "false"}
-          style={{
-            visibility: ready && !error ? "visible" : "hidden",
-            display: "block",
-            margin: "0 auto",
-            maxWidth: "100%",
-            background: "#fff",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-          }}
+          // Keep the page footprint during rendering. Removing it also removes
+          // the scrollbar, which used to cause a resize/cancel/render loop.
+          style={{ visibility: ready && !error ? "visible" : "hidden" }}
         />
       </div>
     </>
   );
 }
-

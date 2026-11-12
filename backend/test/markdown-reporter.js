@@ -4,7 +4,7 @@ const path = require("path");
 class MarkdownReporter {
   onRunComplete(_contexts, results) {
     const kind = reportKind(results);
-    const output = path.join(__dirname, "..", "..", "docs", "test-output", `${kind.file}.md`);
+    const output = path.join(__dirname, "..", "..", "frontend", "docs", "evidence", `${kind.file}.md`);
     const target = kind.target || process.env.API_URL || "local (thesis_test)";
     const rows = [];
     for (const suite of results.testResults) {
@@ -46,14 +46,14 @@ function renderReport(title, target, results, rows) {
   const lines = [
     `# ${title}`,
     "",
-    `- Thời điểm: ${new Date().toISOString()}`,
-    `- Đích: ${target}`,
-    `- Tổng: ${results.numTotalTests}`,
+    `- Timestamp (UTC): ${new Date().toISOString()}`,
+    `- Target: ${target}`,
+    `- Total: ${results.numTotalTests}`,
     `- Passed: ${results.numPassedTests}`,
     `- Failed: ${results.numFailedTests}`,
     `- Skipped: ${results.numPendingTests}`,
     "",
-    "| File | Test | Kết quả | Thời gian |",
+    "| File | Test | Result | Duration |",
     "|---|---|---|---|",
     ...rows.map(
       (row) =>
@@ -62,7 +62,7 @@ function renderReport(title, target, results, rows) {
     ""
   ];
   if (failed.length) {
-    lines.push("## Lỗi", "");
+    lines.push("## Failures", "");
     for (const row of failed) {
       lines.push(`### ${row.title}`, "", "```", row.error.trim(), "```", "");
     }

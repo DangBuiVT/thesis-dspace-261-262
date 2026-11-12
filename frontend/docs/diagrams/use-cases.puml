@@ -1,0 +1,40 @@
+@startuml
+left to right direction
+actor Student
+actor Reviewer
+actor "Editor (library staff)" as Editor
+actor "Final Editor (director)" as Director
+actor Administrator
+actor "SMTP / Mailpit" as SMTP
+rectangle "HCMUT Thesis Portal - weeks 1-6" {
+  usecase "Save draft / submit PDF" as Submit
+  usecase "Track / revise / resubmit" as Track
+  usecase "Read metadata / preview PDF" as Read
+  usecase "Accept / reject with reason" as Decide
+  usecase "Edit metadata" as Edit
+  usecase "Return to Editor with reason" as Return
+  usecase "Confirm portal archive" as Archive
+  usecase "Read approval history" as History
+  usecase "Existing configuration" as Configure
+  usecase "Deliver workflow email" as Notify
+}
+Student --> Submit
+Student --> Track
+Student --> Read
+Student --> History
+Reviewer --> Read
+Reviewer --> Decide
+Reviewer --> History
+Editor --> Read
+Editor --> Decide
+Editor --> Edit
+Editor --> History
+Director --> Read
+Director --> Return
+Director --> Archive
+Director --> History
+Administrator --> Configure
+SMTP --> Notify
+note right of Return : Keeps academic decisions and PDF
+note right of Archive : DSpace publication is separate.\nSigning integration remains pending.
+@enduml

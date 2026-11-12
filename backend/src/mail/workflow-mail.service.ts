@@ -342,6 +342,19 @@ export class WorkflowMailService {
     });
   }
 
+  async notifyLibraryOnDirectorReturn(submissionId: string, reason: string): Promise<void> {
+    const row = await this.loadSubmission(submissionId);
+    if (!row) return;
+    const to = await this.emailsByRole("library_staff");
+    if (!to.length) return;
+    await this.mail.sendTemplated({
+      to, subjectKey: "email_subject_library_returned", bodyKey: "email_body_library_returned",
+      vars: await this.buildVars(row, { reason }),
+      defaultSubject: "[Thesis Portal] Returned to Editor | Yêu cầu thư viện chỉnh sửa",
+      defaultBody: "Title / Đề tài: {{title}}\nReturned to Editor / Trả về thư viện.\nReason / Lý do: {{reason}}\nAcademic approvals are preserved / Giữ nguyên phê duyệt học thuật.\n{{portalUrl}}",
+    });
+  }
+
   async notifyDirectorsOnLibraryApproved(submissionId: string): Promise<void> {
     const row = await this.loadSubmission(submissionId);
     if (!row) {
