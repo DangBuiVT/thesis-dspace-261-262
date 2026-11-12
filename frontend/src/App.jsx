@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
   Alert,
   Button,
@@ -891,11 +891,12 @@ function App() {
   const watchedStudentId = Form.useWatch("studentId", submissionForm);
   const isAdminActor = auth?.user?.role === "admin";
   const facultySelectOptions = useMemo(() => {
-    const locked = isAdminActor
-      ? studentOptions.find((item) => item.value === watchedStudentId)
-      : auth?.user?.facultyId
-        ? { facultyId: auth.user.facultyId, facultyName: auth.user.facultyName }
-        : null;
+    if (isAdminActor) {
+      return archiveFaculties;
+    }
+    const locked = auth?.user?.facultyId
+      ? { facultyId: auth.user.facultyId, facultyName: auth.user.facultyName }
+      : null;
     if (!locked?.facultyId) {
       return archiveFaculties;
     }
@@ -903,7 +904,7 @@ function App() {
       return archiveFaculties;
     }
     return [{ value: locked.facultyId, label: locked.facultyName || locked.facultyId }, ...archiveFaculties];
-  }, [archiveFaculties, auth?.user?.facultyId, auth?.user?.facultyName, isAdminActor, studentOptions, watchedStudentId]);
+  }, [archiveFaculties, auth?.user?.facultyId, auth?.user?.facultyName, isAdminActor]);
   const actingStudentId = isAdminActor ? watchedStudentId : auth?.user?.id;
 
   const configurableFormFields = useMemo(
@@ -1064,6 +1065,9 @@ function App() {
   }, [isAdminActor, editingSubmissionRecord, auth?.user?.id]);
 
   const canChangeSubmissionPeriod = useMemo(() => {
+    if (isAdminActor) {
+      return true;
+    }
     if (isFormReadOnly) {
       return false;
     }
@@ -1072,7 +1076,7 @@ function App() {
       return true;
     }
     return editingSubmissionStatus === "draft";
-  }, [isFormReadOnly, editingSubmissionId, editingSubmissionStatus]);
+  }, [isAdminActor, isFormReadOnly, editingSubmissionId, editingSubmissionStatus]);
 
   const editingSubmissionCapabilities = useMemo(
     () =>
@@ -1640,7 +1644,8 @@ function App() {
   const loadArchiveFaculties = async () => {
     setIsLoadingArchiveFaculties(true);
     try {
-      const response = await fetch("/api/archive/faculties", {
+      const endpoint = auth?.user?.role === "admin" ? "/api/archive-config/faculties" : "/api/archive/faculties";
+      const response = await fetch(endpoint, {
         headers: { ...authHeaders(auth?.token) }
       });
       const payload = await parseResponse(response);
@@ -1682,19 +1687,17 @@ function App() {
   ];
 
   const loadArchiveSemesters = async (facultyId) => {
-    if (!facultyId) {
-      setArchiveSemesters(DEFAULT_SEMESTER_OPTIONS);
-      return DEFAULT_SEMESTER_OPTIONS;
-    }
     setIsLoadingArchiveSemesters(true);
     try {
-      const response = await fetch(`/api/archive/faculties/${facultyId}/semesters`, {
+      const url = facultyId ? `/api/archive/faculties/${facultyId}/semesters` : `/api/archive/semesters`;
+      const response = await fetch(url, {
         headers: { ...authHeaders(auth?.token) }
       });
       const payload = await parseResponse(response);
       let options = (Array.isArray(payload) ? payload : []).map((item) => ({
         value: item.id,
-        label: item.name
+        label: facultyId ? item.name : `${item.facultyName ? `${item.facultyName} — ` : ""}${item.name}`,
+        facultyId: item.facultyId
       }));
       if (options.length === 0) {
         options = DEFAULT_SEMESTER_OPTIONS;
@@ -1712,10 +1715,11 @@ function App() {
   const loadArchivePeriods = async (facultyId, semesterId) => {
     setIsLoadingArchivePeriods(true);
     try {
-      const response = await fetch(
-        `/api/archive/submission-periods?facultyId=${encodeURIComponent(facultyId || "")}&semesterId=${encodeURIComponent(semesterId || "")}`,
-        { headers: { ...authHeaders(auth?.token) } }
-      );
+      const query = new URLSearchParams();
+      if (facultyId) query.set("facultyId", facultyId);
+      if (semesterId) query.set("semesterId", semesterId);
+      const url = `/api/archive/submission-periods${query.toString() ? `?${query.toString()}` : ""}`;
+      const response = await fetch(url, { headers: { ...authHeaders(auth?.token) } });
       const payload = await parseResponse(response);
       let periods = Array.isArray(payload) && payload.length > 0 ? payload : DEFAULT_PERIOD_OPTIONS;
       setArchivePeriods(periods);
@@ -1728,9 +1732,34 @@ function App() {
     }
   };
 
-  const handleArchiveSemesterChange = async (semesterId) => {
-    const facultyId = submissionForm.getFieldValue("archiveFacultyId");
+  const handleAdminFacultyChange = async (facultyId) => {
     submissionForm.setFieldsValue({
+      archiveFacultyId: facultyId,
+      archiveSemesterId: undefined,
+      submissionPeriodId: undefined
+    });
+    setArchiveSemesters([]);
+    setArchivePeriods([]);
+    if (facultyId) {
+      await loadArchiveSemesters(facultyId);
+      await loadArchivePeriods(facultyId, undefined);
+    } else {
+      await loadArchiveSemesters();
+      await loadArchivePeriods();
+    }
+  };
+
+  const handleArchiveSemesterChange = async (semesterId) => {
+    let facultyId = submissionForm.getFieldValue("archiveFacultyId");
+    if (!facultyId && semesterId) {
+      const found = archiveSemesters.find((s) => s.value === semesterId);
+      if (found?.facultyId) {
+        facultyId = found.facultyId;
+        submissionForm.setFieldsValue({ archiveFacultyId: facultyId });
+      }
+    }
+    submissionForm.setFieldsValue({
+      archiveSemesterId: semesterId,
       submissionPeriodId: undefined
     });
     setArchivePeriods([]);
@@ -1739,6 +1768,17 @@ function App() {
 
   const handleSubmissionPeriodChange = (periodId) => {
     submissionForm.setFieldValue("submissionPeriodId", periodId);
+    if (isAdminActor && periodId) {
+      const found = archivePeriods.find((p) => p.id === periodId || p.value === periodId);
+      if (found) {
+        if (found.facultyId && !submissionForm.getFieldValue("archiveFacultyId")) {
+          submissionForm.setFieldsValue({ archiveFacultyId: found.facultyId });
+        }
+        if (found.semesterId && !submissionForm.getFieldValue("archiveSemesterId")) {
+          submissionForm.setFieldsValue({ archiveSemesterId: found.semesterId });
+        }
+      }
+    }
   };
 
   const loadStudents = async () => {
@@ -1990,7 +2030,10 @@ function App() {
       studentId: nextStudentId,
       email: resolveStudentEmail(nextStudentId)
     });
-    applyStudentFaculty(nextStudentId);
+    const currentFacultyId = submissionForm.getFieldValue("archiveFacultyId");
+    if (!currentFacultyId) {
+      applyStudentFaculty(nextStudentId);
+    }
     void loadStudentSubmissions(nextStudentId);
   };
 
@@ -2108,10 +2151,17 @@ function App() {
     setArchivePeriods([]);
     submissionForm.setFieldsValue({
       authorIds: undefined,
+      archiveFacultyId: undefined,
+      archiveSemesterId: undefined,
+      submissionPeriodId: undefined,
       thesisYear: String(new Date().getFullYear()),
       ...defaultArchiveMetadata()
     });
     setAdminSubmissionModalOpen(true);
+    void loadArchiveFaculties();
+    void loadArchiveSemesters();
+    void loadArchivePeriods();
+    void loadStudents();
     void loadSubmissionFormFields(auth.token);
   };
 
@@ -2681,17 +2731,17 @@ function App() {
           "Content-Type": "application/json",
           ...authHeaders(auth.token)
         },
-        body: JSON.stringify({ submissionId, action: "reject", comment })
+        body: JSON.stringify({ submissionId, action: "return_to_editor", comment })
       });
       const payload = await parseResponse(response);
       if (!response.ok) {
-        throw new Error(payload?.message || "Reject failed");
+        throw new Error(payload?.message || "Return to editor failed");
       }
-      message.success(t("Rejected"));
+      message.success(t("Returned to Library Editor"));
       await loadDirectorQueue();
       await loadStaffSubmissions();
     } catch (error) {
-      message.error(tr(error.message || "Reject failed"));
+      message.error(tr(error.message || "Return to editor failed"));
     } finally {
       setDirectorActionLoadingId(null);
     }
@@ -2803,12 +2853,10 @@ function App() {
       render: (_value, record) => (
         <Space>
           <Button type="link" size="small" onClick={() => openQueueSubmissionDetail(record)}>{t("Detail")}</Button>
-          {record.current_step_is_last === false ? (
-            <Button type="primary" loading={loadingId === record.id} onClick={() => onApprove(record.id)}>{t("Approve")}</Button>
-          ) : (
-            <Button type="primary" loading={loadingId === record.id} onClick={() => onArchive(record.id)}>{t("Archive")}</Button>
-          )}
-          <Button danger loading={loadingId === record.id} onClick={() => onReject(record.id)}>{t("Reject")}</Button>
+          <Button type="primary" loading={loadingId === record.id} onClick={() => onArchive(record.id)}>{t("Archive")}</Button>
+          <Button style={{ borderColor: "#faad14", color: "#d48806" }} loading={loadingId === record.id} onClick={() => onReject(record.id)}>
+            {t("Return to Editor")}
+          </Button>
         </Space>
       )
     }
@@ -3163,13 +3211,17 @@ function App() {
                 <Form.Item
                   label={t("Faculty")}
                   name="archiveFacultyId"
-                  rules={structuralRequired("archiveFacultyId") ? [{ required: true, message: t("This student is not assigned to a faculty") }] : []}
+                  rules={structuralRequired("archiveFacultyId") ? [{ required: true, message: t("Please select a faculty") }] : []}
                 >
                   <Select
-                    placeholder={t("Student faculty")}
+                    placeholder={isAdminActor ? t("Select faculty") : t("Student faculty")}
                     loading={isLoadingArchiveFaculties}
                     options={facultySelectOptions}
-                    disabled
+                    disabled={!isAdminActor}
+                    onChange={isAdminActor ? handleAdminFacultyChange : undefined}
+                    showSearch={isAdminActor}
+                    allowClear={isAdminActor}
+                    optionFilterProp="label"
                     notFoundContent={
                       isLoadingArchiveFaculties ? t("Loading...") : t("No faculty assigned")
                     }
@@ -3189,9 +3241,9 @@ function App() {
                     optionFilterProp="label"
                     loading={isLoadingArchiveSemesters}
                     options={archiveSemesters}
-                    disabled={!archiveFacultyId || !canChangeSubmissionPeriod}
+                    disabled={!isAdminActor && (!archiveFacultyId || !canChangeSubmissionPeriod)}
                     onChange={(value) => void handleArchiveSemesterChange(value)}
-                    notFoundContent={isLoadingArchiveSemesters ? t("Loading...") : t("Select a faculty first")}
+                    notFoundContent={isLoadingArchiveSemesters ? t("Loading...") : (archiveFacultyId ? t("No semesters for this faculty") : t("No semesters available"))}
                   />
                 </Form.Item>
               ) : renderAlternateField("archiveSemesterId")}
@@ -3207,7 +3259,7 @@ function App() {
                     placeholder={t("Select open submission period")}
                     optionFilterProp="label"
                     loading={isLoadingArchivePeriods}
-                    disabled={!archiveSemesterId || !canChangeSubmissionPeriod}
+                    disabled={!isAdminActor && (!archiveSemesterId || !canChangeSubmissionPeriod)}
                     onChange={handleSubmissionPeriodChange}
                     options={archivePeriods.map((p) => ({
                       value: p.id,
@@ -3216,7 +3268,7 @@ function App() {
                         : p.name
                     }))}
                     notFoundContent={
-                      isLoadingArchivePeriods ? t("Loading...") : t("No open periods for this semester")
+                      isLoadingArchivePeriods ? t("Loading...") : t("No open periods available")
                     }
                   />
                 </Form.Item>
@@ -3251,7 +3303,7 @@ function App() {
               >
                 {showNative("email") ? (
                   <Form.Item label={t("Email")} name="email">
-                    <Input disabled placeholder="username@hcmut.edu.vn" />
+                    <Input disabled={!isAdminActor} placeholder="username@hcmut.edu.vn" />
                   </Form.Item>
                 ) : renderAlternateField("email")}
                 {showNative("titleVi") ? (
@@ -4240,7 +4292,7 @@ function App() {
           <Space style={{ width: "100%", justifyContent: "space-between" }}>
             <div />
             <Space>
-              {isAdminActor && staffDetailRecord ? (
+              {(isAdminActor || auth?.user?.role === "director") && staffDetailRecord ? (
                 <Button onClick={() => void handleAdminEditSubmission(staffDetailRecord)}>{t("Edit")}</Button>
               ) : null}
               {canStaffDeleteSubmission(auth?.user?.role) && staffDetailRecord ? (
@@ -4436,7 +4488,7 @@ function App() {
         <TextArea rows={4} value={libraryRejectReason} onChange={(event) => setLibraryRejectReason(event.target.value)} />
       </Modal>
       <Modal
-        title={t("Director reject")}
+        title={t("Return to Library Editor")}
         open={directorRejectModalOpen}
         onOk={confirmDirectorReject}
         onCancel={() => {
@@ -4444,14 +4496,15 @@ function App() {
           setDirectorRejectTargetId(null);
           setDirectorRejectReason("");
         }}
-        okText={t("Reject")}
-        okButtonProps={{ danger: true }}
+        okText={t("Return to Editor")}
+        okButtonProps={{ style: { backgroundColor: "#faad14", borderColor: "#faad14" } }}
       >
-        <Paragraph type="secondary">{t("Please provide a clear reason for rejection.")}</Paragraph>
+        <Paragraph type="secondary">{t("Please explain what metadata or details the Library Editor needs to revise.")}</Paragraph>
         <TextArea
           rows={4}
           value={directorRejectReason}
           onChange={(event) => setDirectorRejectReason(event.target.value)}
+          placeholder={t("e.g., Please revise the English thesis title and standardize Dublin Core keywords.")}
         />
       </Modal>
       <Modal

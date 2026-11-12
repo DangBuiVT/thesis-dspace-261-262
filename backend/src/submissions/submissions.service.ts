@@ -1,4 +1,4 @@
-﻿import { Readable } from 'node:stream';
+import { Readable } from 'node:stream';
 import { PdfStampingService, SignatureStyleType } from '../reviews/pdf-stamping.service';
 import {
   BadRequestException,
@@ -93,7 +93,11 @@ export class SubmissionsService {
   private assertPeriodMatchesStudentFaculty(
     student: { facultyId: string | null },
     periodFacultyId: string,
+    actor?: JwtPayload,
   ) {
+    if (actor && this.isAdminActor(actor)) {
+      return;
+    }
     if (!student.facultyId) {
       throw new BadRequestException(
         "This student is not assigned to a faculty",
@@ -402,7 +406,7 @@ export class SubmissionsService {
       const resolved = await this.submissionPeriodsService.resolveOpenPeriod(
         dto.submissionPeriodId,
       );
-      this.assertPeriodMatchesStudentFaculty(student, resolved.facultyId);
+      this.assertPeriodMatchesStudentFaculty(student, resolved.facultyId, actor);
       period = resolved;
     } else if (
       periodEnabled &&
@@ -633,7 +637,7 @@ export class SubmissionsService {
       periodContext = await this.submissionPeriodsService.resolveOpenPeriod(
         dto.submissionPeriodId,
       );
-      this.assertPeriodMatchesStudentFaculty(student, periodContext.facultyId);
+      this.assertPeriodMatchesStudentFaculty(student, periodContext.facultyId, actor);
     }
 
     const submissionId = randomUUID();
@@ -767,12 +771,14 @@ export class SubmissionsService {
       if (dto.studentId && dto.studentId !== row.student_id) {
         throw new BadRequestException("Cannot change the submitting student");
       }
-      await this.assertStudentSubmissionAction(
-        client,
-        submissionId,
-        row.student_id,
-        "edit",
-      );
+      if (!this.isAdminActor(actor)) {
+        await this.assertStudentSubmissionAction(
+          client,
+          submissionId,
+          row.student_id,
+          "edit",
+        );
+      }
 
       const student = await this.usersService.findById(row.student_id);
       if (!student) {
@@ -865,6 +871,7 @@ export class SubmissionsService {
         this.assertPeriodMatchesStudentFaculty(
           student,
           periodContext.facultyId,
+          actor,
         );
       }
 
@@ -1189,6 +1196,7 @@ export class SubmissionsService {
         this.assertPeriodMatchesStudentFaculty(
           student,
           periodContext.facultyId,
+          actor,
         );
       }
 
@@ -1507,12 +1515,16 @@ export class SubmissionsService {
         throw new NotFoundException("Submission not found");
       }
       this.assertCanSubmitForStudent(actor, row.student_id);
-      const { status } = await this.assertStudentSubmissionAction(
-        client,
-        submissionId,
-        row.student_id,
-        "revert_draft",
-      );
+      let status = row.status;
+      if (!this.isAdminActor(actor)) {
+        const actionResult = await this.assertStudentSubmissionAction(
+          client,
+          submissionId,
+          row.student_id,
+          "revert_draft",
+        );
+        status = actionResult.status;
+      }
 
       await client.query(
         `UPDATE submissions SET status = 'draft' WHERE id = $1::uuid`,

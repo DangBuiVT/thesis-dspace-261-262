@@ -15,6 +15,13 @@ export class ArchiveController {
     return this.submissionPeriodsService.listFacultiesWithOpenPeriods();
   }
 
+  @Get("semesters")
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions("submit_thesis", "configure_system")
+  listAllSemesters(@Query("facultyId") facultyId?: string) {
+    return this.submissionPeriodsService.listSemestersWithOpenPeriods(facultyId);
+  }
+
   @Get("faculties/:facultyId/semesters")
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions("submit_thesis", "configure_system")
@@ -25,10 +32,7 @@ export class ArchiveController {
   @Get("submission-periods")
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions("submit_thesis", "configure_system")
-  listOpenPeriods(@Query("facultyId") facultyId: string, @Query("semesterId") semesterId: string) {
-    if (!facultyId || !semesterId) {
-      return [];
-    }
+  listOpenPeriods(@Query("facultyId") facultyId?: string, @Query("semesterId") semesterId?: string) {
     return this.submissionPeriodsService.listOpenPeriods(facultyId, semesterId);
   }
 }

@@ -1,6 +1,18 @@
 /** Flat VI/EN catalog. Keys are stable English ids; missing keys fall back to English. */
 export const catalog = {
   "Thesis Deposit Portal": { en: "Thesis Deposit Portal", vi: "Cổng nộp luận văn" },
+  "Return to Editor": { en: "Return to Editor", vi: "Trả về Thư viện" },
+  "Return to Library Editor": { en: "Return to Library Editor", vi: "Yêu cầu Thư viện chỉnh sửa lại" },
+  "Returned to Library Editor": { en: "Returned to Library Editor", vi: "Đã trả hồ sơ về cho Cán bộ thư viện biên tập lại" },
+  "Please explain what metadata or details the Library Editor needs to revise.": {
+    en: "Please explain what metadata or details the Library Editor needs to revise.",
+    vi: "Vui lòng giải thích phần metadata hoặc thông tin nào Cán bộ thư viện cần hiệu đính lại."
+  },
+  "e.g., Please revise the English thesis title and standardize Dublin Core keywords.": {
+    en: "e.g., Please revise the English thesis title and standardize Dublin Core keywords.",
+    vi: "Ví dụ: Vui lòng sửa lại tiêu đề tiếng Anh và chuẩn hóa từ khóa Dublin Core."
+  },
+  "Commit to Archive": { en: "Commit to Archive", vi: "Lưu chiểu DSpace" },
   Login: { en: "Login", vi: "Đăng nhập" },
   "HCMUT Google sign-in": { en: "HCMUT Google sign-in", vi: "Đăng nhập Google HCMUT" },
   "Sign in with your verified @hcmut.edu.vn Google account.": {

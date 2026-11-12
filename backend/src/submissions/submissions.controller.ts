@@ -1,4 +1,4 @@
-﻿import {
+import {
   BadRequestException,
   Body,
   Controller,
@@ -256,7 +256,7 @@ export class SubmissionsController {
 
   @Patch(":id/metadata")
   @UseGuards(JwtAuthGuard, PermissionsGuard)
-  @RequirePermissions("library_intake", "director_approval", "view_all_submissions")
+  @RequirePermissions("library_intake", "director_approval", "view_all_submissions", "configure_system")
   async updateMetadata(
     @Req() req: { user: JwtPayload },
     @Param("id", ParseUUIDPipe) id: string,
