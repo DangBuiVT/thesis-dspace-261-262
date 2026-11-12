@@ -11,6 +11,7 @@ import { PermissionsService } from "../users/permissions.service";
 import { ChangePasswordDto } from "./dto/change-password.dto";
 import { LoginDto } from "./dto/login.dto";
 import { RegisterDto } from "./dto/register.dto";
+import { isHashedPassword, verifyPassword } from "./password.util";
 import { GoogleAuthService } from "./google-auth.service";
 import { UsersService, type UserRecord } from "../users/users.service";
 
@@ -39,10 +40,14 @@ export class AuthService {
     if (method === "google" && user?.role !== "admin") {
       throw new ForbiddenException("Password login is disabled. Use Google sign-in.");
     }
-    if (!user || !user.password || user.password !== payload.password) {
+    if (!user || !user.password || !(await verifyPassword(payload.password, user.password))) {
       throw new UnauthorizedException("Invalid username or password");
     }
     await this.assertUserMaySignIn(user);
+    if (!isHashedPassword(user.password)) {
+      // Nâng cấp mật khẩu cũ (plaintext) sang bản băm sau khi đăng nhập thành công.
+      await this.usersService.updatePassword(user.username, payload.password);
+    }
     return this.sessionResponse(user);
   }
 
@@ -66,10 +71,10 @@ export class AuthService {
       throw new UnauthorizedException("This account has been disabled");
     }
     if (user.password) {
-      if (!input.currentPassword || input.currentPassword !== user.password) {
+      if (!input.currentPassword || !(await verifyPassword(input.currentPassword, user.password))) {
         throw new BadRequestException("Current password is incorrect");
       }
-      if (input.newPassword === user.password) {
+      if (await verifyPassword(input.newPassword, user.password)) {
         throw new BadRequestException("New password must be different from the current password");
       }
     }

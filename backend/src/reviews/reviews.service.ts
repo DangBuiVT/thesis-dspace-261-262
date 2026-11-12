@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {
   THESIS_METADATA_GROUP_BY,
   THESIS_METADATA_SELECT,
@@ -15,6 +15,7 @@ import type { JwtPayload } from "../auth/jwt.strategy";
 import { GroupsService } from "../workflow/groups.service";
 import { WorkflowService } from "../workflow/workflow.service";
 import { ReviewActionDto } from "./dto/review-action.dto";
+import { buildIntegrityEvidence } from "../common/integrity-evidence";
 import { PdfStampingService, SignatureStyleType } from "./pdf-stamping.service";
 import {
   SubmissionStatus,
@@ -636,17 +637,14 @@ export class ReviewsService {
 
         if (dto.action === ReviewActionType.ARCHIVE) {
           // Tính toán SHA-256 Hash toàn vẹn cho chữ ký số lưu chiểu
-          const signaturePayload = `${dto.submissionId}-${user.sub}-${new Date().toISOString()}-BKlib-DSpace`;
-          const sha256Hash = createHash("sha256").update(signaturePayload).digest("hex");
-          const certSerial = "BK-VN-" + new Date().getFullYear() + "-" + Math.floor(100000 + Math.random() * 900000);
-          const handleId = "123456789/" + Math.floor(1000 + Math.random() * 9000);
+          const signedAt = new Date().toISOString();
+          const evidence = buildIntegrityEvidence(dto.submissionId, user.sub, signedAt, "BKlib-DSpace");
 
           await client.query(
             `UPDATE submissions
-             SET dspace_item_id = COALESCE(NULLIF(dspace_item_id, ''), $1),
-                 dspace_publish_status = 'published'
-             WHERE id = $2::uuid`,
-            [handleId, dto.submissionId]
+             SET dspace_publish_status = COALESCE(NULLIF(dspace_publish_status, ''), 'pending')
+             WHERE id = $1::uuid`,
+            [dto.submissionId]
           );
 
           await client.query(
@@ -658,10 +656,7 @@ export class ReviewsService {
               user.sub,
               JSON.stringify({
                 is_signed: true,
-                algorithm: "SHA-256 with RSA 2048 / PKCS#7",
-                sha256_hash: sha256Hash,
-                certificate_serial: certSerial,
-                issuer: "TRƯỜNG ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT / BKLIB CA ROOT",
+                ...evidence,
                 institution_text: "ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT",
                 signed_pages_scope: "Tất cả các trang (100% pages)",
                 signer_name: user.displayName || user.username || "ThS. Lê Hoàng (Thư viện)",
@@ -1094,17 +1089,14 @@ export class ReviewsService {
           );
 
           if (dto.action === ReviewActionType.ARCHIVE) {
-            const signaturePayload = `${dto.submissionId}-${user.sub}-${new Date().toISOString()}-BKlib-DSpace`;
-            const sha256Hash = createHash("sha256").update(signaturePayload).digest("hex");
-            const certSerial = "BK-VN-" + new Date().getFullYear() + "-" + Math.floor(100000 + Math.random() * 900000);
-            const handleId = "123456789/" + Math.floor(1000 + Math.random() * 9000);
+            const signedAt = new Date().toISOString();
+            const evidence = buildIntegrityEvidence(dto.submissionId, user.sub, signedAt, "BKlib-DSpace");
 
             await client.query(
               `UPDATE submissions
-               SET dspace_item_id = COALESCE(NULLIF(dspace_item_id, ''), $1),
-                   dspace_publish_status = 'published'
-               WHERE id = $2::uuid`,
-              [handleId, dto.submissionId]
+               SET dspace_publish_status = COALESCE(NULLIF(dspace_publish_status, ''), 'pending')
+               WHERE id = $1::uuid`,
+              [dto.submissionId]
             );
 
             await client.query(
@@ -1116,10 +1108,7 @@ export class ReviewsService {
                 user.sub,
                 JSON.stringify({
                   is_signed: true,
-                  algorithm: "SHA-256 with RSA 2048 / PKCS#7",
-                  sha256_hash: sha256Hash,
-                  certificate_serial: certSerial,
-                  issuer: "TRƯỜNG ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT / BKLIB CA ROOT",
+                  ...evidence,
                   institution_text: "ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT",
                   signed_pages_scope: "Tất cả các trang (100% pages)",
                   signer_name: user.displayName || user.username || "Admin (Bảo lưu)",
@@ -1355,19 +1344,16 @@ export class ReviewsService {
       const client = await this.db.connect();
       try {
         await client.query("BEGIN");
-        const signaturePayload = `${subId}-${user.sub}-${new Date().toISOString()}-BKlib-LegacyBatch`;
-        const sha256Hash = createHash("sha256").update(signaturePayload).digest("hex");
-        const certSerial = "BK-LEGACY-" + new Date().getFullYear() + "-" + Math.floor(100000 + Math.random() * 900000);
-        const handleId = "123456789/" + Math.floor(1000 + Math.random() * 9000);
+        const signedAt = new Date().toISOString();
+        const evidence = buildIntegrityEvidence(subId, user.sub, signedAt, "BKlib-LegacyBatch");
 
         // Đảm bảo bài nộp chuyển sang trạng thái đã lưu chiểu nếu đang draft/reviewing/approved
         await client.query(
           `UPDATE submissions
            SET status = 'archived',
-               dspace_item_id = COALESCE(NULLIF(dspace_item_id, ''), $1),
-               dspace_publish_status = 'published'
-           WHERE id = $2::uuid`,
-          [handleId, subId]
+               dspace_publish_status = COALESCE(NULLIF(dspace_publish_status, ''), 'pending')
+           WHERE id = $1::uuid`,
+          [subId]
         );
 
         await client.query(
@@ -1380,10 +1366,7 @@ export class ReviewsService {
             JSON.stringify({
               is_signed: true,
               is_legacy_batch: true,
-              algorithm: "SHA-256 with RSA 2048 / PKCS#7",
-              sha256_hash: sha256Hash,
-              certificate_serial: certSerial,
-              issuer: "TRƯỜNG ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT / BKLIB CA ROOT",
+              ...evidence,
               institution_text: "ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT",
               signed_pages_scope: "Tất cả các trang (100% pages)",
               signer_name: user.displayName || user.username || "Quản trị viên (Ký số hàng loạt)",

@@ -26,16 +26,6 @@ export async function ensurePortalSchema(db: Pool) {
   await db.query(`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS current_step INT`);
   await db.query(`DROP INDEX IF EXISTS idx_submissions_one_active_per_student`);
   try {
-    await db.query(
-      `INSERT INTO users (username, password, display_name, auth_source, role, status, faculty_id)
-       VALUES ('student2', 'student123', 'Student Beta', 'local', 'student', 'active', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0005')
-       ON CONFLICT (username) DO NOTHING`
-    );
-  } catch {
-    // users table may not exist yet on first boot
-  }
-
-  try {
     await db.query(`
       INSERT INTO faculties (id, name, status)
       VALUES ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0005', 'Khoa Khoa học và Kỹ thuật Máy tính', 'active')
@@ -67,10 +57,7 @@ export async function ensurePortalSchema(db: Pool) {
         'open',
         TRUE
       )
-      ON CONFLICT (id) DO UPDATE SET
-        status = 'open',
-        opens_at = NOW() - INTERVAL '30 days',
-        closes_at = NOW() + INTERVAL '120 days';
+      ON CONFLICT (id) DO NOTHING;
     `);
   } catch (_e) {
     // Ignore if table not yet created

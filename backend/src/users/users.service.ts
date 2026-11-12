@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import { hashPassword } from "../auth/password.util";
 import { createPgPool } from "./db-pool";
 import type { UserRole } from "./user-role";
 
@@ -81,7 +82,10 @@ export class UsersService {
   }
 
   async updatePassword(username: string, password: string): Promise<void> {
-    await this.db.query(`UPDATE users SET password = $2 WHERE username = $1`, [username, password]);
+    await this.db.query(`UPDATE users SET password = $2 WHERE username = $1`, [
+      username,
+      await hashPassword(password),
+    ]);
   }
 
   async updateProfileFromGoogle(
@@ -125,7 +129,7 @@ export class UsersService {
     await this.db.query(
       `INSERT INTO users (username, password, display_name, role, status, auth_source, faculty_id)
        VALUES ($1, $2, $3, $4, 'active', 'local', $5)`,
-      [input.username.trim().toLowerCase(), input.password, input.displayName.trim(), input.role, input.facultyId ?? null]
+      [input.username.trim().toLowerCase(), await hashPassword(input.password), input.displayName.trim(), input.role, input.facultyId ?? null]
     );
     return (await this.findByUsername(input.username))!;
   }

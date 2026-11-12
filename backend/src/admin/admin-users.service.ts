@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import * as ExcelJS from "exceljs";
+import { hashPassword } from "../auth/password.util";
 import { createPgPool } from "../users/db-pool";
 import { isUserRole, USER_ROLES, type UserRole } from "../users/user-role";
 import { CreateUserDto } from "./dto/create-user.dto";
@@ -49,7 +50,7 @@ export class AdminUsersService {
     await this.db.query(
       `INSERT INTO users (username, password, display_name, role, status, faculty_id)
        VALUES ($1, $2, $3, $4, 'active', $5)`,
-      [username, dto.password, dto.displayName.trim(), dto.role, facultyId]
+      [username, dto.password ? await hashPassword(dto.password) : null, dto.displayName.trim(), dto.role, facultyId]
     );
 
     const created = await this.db.query<UserAdminRow>(
@@ -101,7 +102,7 @@ export class AdminUsersService {
         userId,
         dto.displayName?.trim() ?? null,
         dto.role ?? null,
-        dto.password ?? null,
+        dto.password ? await hashPassword(dto.password) : null,
         dto.status ?? null,
         facultyId
       ]
@@ -475,7 +476,7 @@ export class AdminUsersService {
       await this.db.query(
         `INSERT INTO users (username, password, display_name, role, status, auth_source, faculty_id)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [username, password, displayName, role, status, password ? "local" : "google", facultyId]
+        [username, password ? await hashPassword(password) : null, displayName, role, status, password ? "local" : "google", facultyId]
       );
       const faculty = facultyId
         ? await this.db.query<{ name: string }>(`SELECT name FROM faculties WHERE id = $1::uuid LIMIT 1`, [facultyId])

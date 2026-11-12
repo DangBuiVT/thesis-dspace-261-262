@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException, OnModuleInit } from "@nestjs/common";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
+import { buildIntegrityEvidence } from "../common/integrity-evidence";
 import type { PoolClient } from "pg";
 import { createPgPool } from "../users/db-pool";
 import { ensurePortalSchema } from "./ensure-schema";
@@ -187,10 +188,7 @@ export class WorkflowService implements OnModuleInit {
       `SELECT value FROM system_settings WHERE key = 'signature_watermark_pages' LIMIT 1`
     );
     const signedAt = new Date().toISOString();
-    const sha256Hash = createHash("sha256")
-      .update(`${submissionId}-${actor?.sub || "system"}-${signedAt}-BKlib-DSpace`)
-      .digest("hex");
-    const certSerial = `BK-VN-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
+    const evidence = buildIntegrityEvidence(submissionId, actor?.sub || "system", signedAt, "BKlib-DSpace");
     const actorRole = actor?.role || "system";
 
     await client.query(
@@ -204,10 +202,7 @@ export class WorkflowService implements OnModuleInit {
         JSON.stringify({
           is_signed: true,
           auto_archived_without_review: true,
-          algorithm: "SHA-256 with RSA 2048 / PKCS#7",
-          sha256_hash: sha256Hash,
-          certificate_serial: certSerial,
-          issuer: "TRƯỜNG ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT / BKLIB CA ROOT",
+          ...evidence,
           institution_text: "ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT",
           signed_pages_scope: "Tất cả các trang (100% pages)",
           signer_name: actor?.displayName || actor?.username || "BKlib Admin",

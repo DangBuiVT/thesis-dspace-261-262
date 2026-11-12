@@ -252,10 +252,16 @@ export class WorkflowMailService {
     reason?: string
   ): Promise<void> {
     const row = await this.loadSubmission(submissionId);
-    const handleId = row?.dspace_item_id || "123456789/8811";
-    const handleUrl = `https://dspace.tv.hcmut.edu.vn/handle/${handleId}`;
 
     if (decision === "approved") {
+      // Chỉ đưa link handle khi bài đã thực sự có mã định danh DSpace (do dịch vụ xuất bản ghi nhận).
+      const handleId = row?.dspace_item_id || "";
+      const handleUrl = handleId ? `https://dspace.tv.hcmut.edu.vn/handle/${handleId}` : "";
+      const handleBlock = handleUrl
+        ? "\nvà nó đã được gán mã định danh sau:\n" +
+          handleUrl +
+          "\n\nVui lòng sử dụng mã định danh này khi trích dẫn bài nộp của bạn.\n"
+        : "\nMã định danh lưu trữ sẽ được thông báo sau khi bài nộp được xuất bản lên DSpace.\n";
       await this.notifyStudent(submissionId, {
         subjectKey: "email_subject_student_director_decision",
         bodyKey: "email_body_student_director_decision",
@@ -266,9 +272,9 @@ export class WorkflowMailService {
         },
         defaultSubject: "Quy trình chuyển luận văn - Bài nộp đã được chấp nhận",
         defaultBody:
-          "Bạn đã gửi: {{title}}\n\nVề bộ sưu tập: Bài luận văn Thạc sĩ\n\nBài nộp của bạn đã được chấp nhận và lưu trữ trong DSpace tại HCMUT.\nvà nó đã được gán mã định danh sau:\n" +
-          handleUrl +
-          "\n\nVui lòng sử dụng mã định danh này khi trích dẫn bài nộp của bạn.\n\nCảm ơn rất nhiều!\n\nNhóm DSpace tại HCMUT"
+          "Bạn đã gửi: {{title}}\n\nVề bộ sưu tập: Bài luận văn Thạc sĩ\n\nBài nộp của bạn đã được chấp nhận và lưu trữ trong DSpace tại HCMUT.\n" +
+          handleBlock +
+          "\nCảm ơn rất nhiều!\n\nNhóm DSpace tại HCMUT"
       });
       return;
     }

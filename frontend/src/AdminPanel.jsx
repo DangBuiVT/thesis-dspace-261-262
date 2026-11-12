@@ -1411,7 +1411,7 @@ export default function AdminPanel({
           <Descriptions.Item label={t("Phạm vi ký trang")}>
             <Tag color="blue">Ký số trên TẤT CẢ CÁC TRANG (100% pages)</Tag>
           </Descriptions.Item>
-          <Descriptions.Item label={t("Thuật toán")}>SHA-256 with RSA (2048-bit) / PAdES</Descriptions.Item>
+          <Descriptions.Item label={t("Thuật toán")}>SHA-256 (băm toàn vẹn nội bộ, chưa ký RSA)</Descriptions.Item>
         </Descriptions>
       </Card>
 
