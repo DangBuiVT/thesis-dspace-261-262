@@ -1,4 +1,8 @@
 import { useRef, useState } from "react";
+import {
+  getStoredSignatureStyle,
+  getStoredWatermarkPages,
+} from "../../../shared/signature.js";
 
 export function useReviewState() {
   const workflowRequests = useRef(new Set());
@@ -54,6 +58,40 @@ export function useReviewState() {
   const [directorReturnReason, setDirectorReturnReason] = useState("");
 
   const [reviewerDetailRecord, setReviewerDetailRecord] = useState(null);
+
+  // Admin intake: administrators may act on any pending step.
+  const [adminIntakeQueue, setAdminIntakeQueue] = useState([]);
+
+  const [isLoadingAdminIntakeQueue, setIsLoadingAdminIntakeQueue] =
+    useState(false);
+
+  const [adminIntakeActionLoadingId, setAdminIntakeActionLoadingId] =
+    useState(null);
+
+  const [adminRejectModalOpen, setAdminRejectModalOpen] = useState(false);
+
+  const [adminRejectTargetId, setAdminRejectTargetId] = useState(null);
+
+  const [adminRejectReason, setAdminRejectReason] = useState("");
+
+  // Legacy batch signing of theses that were archived before digital signatures existed.
+  const [legacyBatchList, setLegacyBatchList] = useState([]);
+
+  const [isLoadingLegacyBatch, setIsLoadingLegacyBatch] = useState(false);
+
+  const [selectedLegacyKeys, setSelectedLegacyKeys] = useState([]);
+
+  const [batchSigningLoading, setBatchSigningLoading] = useState(false);
+
+  const [legacyBatchStyle, setLegacyBatchStyle] = useState(() =>
+    getStoredSignatureStyle(),
+  );
+
+  const [legacyBatchPages, setLegacyBatchPages] = useState(() =>
+    getStoredWatermarkPages(),
+  );
+
+  const [batchResult, setBatchResult] = useState(null);
   return {
     workflowRequests,
     queueError,
@@ -108,5 +146,31 @@ export function useReviewState() {
     setDirectorReturnReason,
     reviewerDetailRecord,
     setReviewerDetailRecord,
+    adminIntakeQueue,
+    setAdminIntakeQueue,
+    isLoadingAdminIntakeQueue,
+    setIsLoadingAdminIntakeQueue,
+    adminIntakeActionLoadingId,
+    setAdminIntakeActionLoadingId,
+    adminRejectModalOpen,
+    setAdminRejectModalOpen,
+    adminRejectTargetId,
+    setAdminRejectTargetId,
+    adminRejectReason,
+    setAdminRejectReason,
+    legacyBatchList,
+    setLegacyBatchList,
+    isLoadingLegacyBatch,
+    setIsLoadingLegacyBatch,
+    selectedLegacyKeys,
+    setSelectedLegacyKeys,
+    batchSigningLoading,
+    setBatchSigningLoading,
+    legacyBatchStyle,
+    setLegacyBatchStyle,
+    legacyBatchPages,
+    setLegacyBatchPages,
+    batchResult,
+    setBatchResult,
   };
 }

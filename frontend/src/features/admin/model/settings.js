@@ -9,6 +9,10 @@ export function isDspaceSettingKey(key) {
   return String(key || "").startsWith("dspace_");
 }
 
+export function isSignatureSettingKey(key) {
+  return String(key || "").startsWith("signature_");
+}
+
 export const EMAIL_TECHNICAL_KEYS = [
   "email_enabled",
   "smtp_host",

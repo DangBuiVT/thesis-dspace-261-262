@@ -134,3 +134,23 @@ npm run test:e2e
 The added `playwright/refactor-navigation.spec.ts` covers extracted admin tabs, user and field dialogs, archive settings, and fresh state across logout and role changes. Existing browser coverage continues to exercise the submission/review return loop, persistent metadata, PDF rendering/retry, mobile Vietnamese, and portal archival. See the [browser evidence](evidence/playwright-report.md) for actual results and timestamps. Backend and email results from the earlier implementation remain separately dated evidence; this frontend refactor does not imply a new backend/SMTP run.
 
 Live DSpace publication, real signing, production SMTP, and a full accessibility audit retain the integration limits in [validation](validation.md).
+
+## Features merged from `duc-fix-new`
+
+These features came from the earlier single-file `App.jsx`/`AdminPanel.jsx` and now live inside the feature folders. Shared, feature-neutral helpers stay in `shared/`.
+
+| Feature | Location |
+|---|---|
+| Student self-registration and demo account buttons | `features/auth/RegisterDialog.jsx`, `useAuthSession.js` (`openRegister`, `handleRegister`), `LoginPanel.jsx` |
+| Admin: per-submission faculty (including a typed "Other" faculty) and closed periods | `features/submissions/components/SubmissionForm.jsx`, `hooks/useSubmissionData.js` (`handleAdminFacultyChange`, admin archive endpoints) |
+| Admin: switch review steps on/off per submission | `model/formConfig.js` (`WORKFLOW_STEP_FIELDS`), `hooks/useSubmissionSchema.jsx`, `hooks/useSubmissionSelection.js` (`workflowRoles`) |
+| Several theses per student | `model/formConfig.js` (`ALLOW_MULTIPLE_STUDENT_SUBMISSIONS`), `model/access.js` |
+| Permission-based dashboards | `model/access.js` (`hasPermission`), `components/StaffDashboard.jsx`, `hooks/useSubmissionLifecycle.js` |
+| Admin intake (act at any step) | `components/AdminIntakePanel.jsx`, `hooks/useReviewActions.js` (`submitAdminIntakeAction`) |
+| Batch signing of older theses | `components/LegacySigningPanel.jsx`, `components/BatchSigningResultDialog.jsx`, `hooks/useReviewActions.js` (`handleBatchSignLegacy`) |
+| Signature style picker and stamped preview before archiving | `workflow/SignatureStylePicker.jsx` (passed to `ReviewWorkspace` as `signatureTools`) |
+| Signature verification (hash, PAdES, RFC 3161) on archived theses | `workflow/SignatureStatusCard.jsx` → `GET /submissions/:id/signature-status` |
+| System defaults for signature style and watermark pages | `features/admin/components/SignatureSettingsPanel.jsx`, `hooks/useAdminSettings.js` (`saveSignatureSettings`); stored in `system_settings` |
+| Signature style labels and browser-remembered choice | `shared/signature.js` |
+
+Adding a feature follows the same pattern: requests go in the feature's `api.js`, state in a `use…State` hook, behaviour in a hook that the feature's provider composes, and UI in `components/` or `workflow/`. `npm --prefix frontend run check:architecture` enforces the boundaries.

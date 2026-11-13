@@ -19,6 +19,7 @@ import {
 import PdfPreview from "./PdfPreview";
 import MetadataEditor, { METADATA_FIELDS } from "./MetadataEditor";
 import ApprovalHistory from "./ApprovalHistory";
+import SignatureStatusCard from "./SignatureStatusCard";
 import { stageLabel } from "./TaskQueue";
 
 export default function ReviewWorkspace({
@@ -27,6 +28,7 @@ export default function ReviewWorkspace({
   onSaved,
   actions,
   extraActions,
+  signatureTools = null,
   fields = [],
 }) {
   const { t } = useI18n();
@@ -87,6 +89,10 @@ export default function ReviewWorkspace({
           }
         />
       )}
+      {status === "archived" && auth.user.role !== "student" && (
+        <SignatureStatusCard submissionId={record.id} token={auth.token} />
+      )}
+      {status !== "archived" ? signatureTools : null}
       <Tabs
         defaultActiveKey="metadata"
         items={[

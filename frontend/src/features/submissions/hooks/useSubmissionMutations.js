@@ -14,7 +14,10 @@ import {
   canStudentSubmitThesis,
 } from "../model/access.js";
 import { fieldDisplayLabel } from "../../../i18n/labels.js";
-import { DEFAULT_PUBLISHER } from "../model/formConfig.js";
+import {
+  DEFAULT_PUBLISHER,
+  OTHER_FACULTY_VALUE,
+} from "../model/formConfig.js";
 
 export function useSubmissionMutations({
   auth,
@@ -410,9 +413,14 @@ export function useSubmissionMutations({
           );
         }
       }
+      // Admin overrides: a hand-typed faculty has no period; a disabled reviewer step needs no reviewer.
+      const adminOtherFaculty =
+        isAdminActor && values.archiveFacultyId === OTHER_FACULTY_VALUE;
+      const adminReviewerOff = isAdminActor && values.workflowReviewer === false;
       if (
         structuralRequired("submissionPeriodId") &&
-        !values.submissionPeriodId
+        !values.submissionPeriodId &&
+        !adminOtherFaculty
       ) {
         throw new Error("Please select a submission period");
       }
@@ -422,6 +430,7 @@ export function useSubmissionMutations({
       if (
         showNative("reviewerIds") &&
         structuralRequired("reviewerIds") &&
+        !adminReviewerOff &&
         reviewerIds.length === 0
       ) {
         throw new Error("Please select at least one reviewer");
@@ -429,6 +438,7 @@ export function useSubmissionMutations({
       if (
         !showNative("reviewerIds") &&
         structuralRequired("reviewerIds") &&
+        !adminReviewerOff &&
         !String(values.reviewerIds ?? "").trim()
       ) {
         throw new Error("Please select at least one reviewer");

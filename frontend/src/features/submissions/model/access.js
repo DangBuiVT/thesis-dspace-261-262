@@ -1,3 +1,5 @@
+import { ALLOW_MULTIPLE_STUDENT_SUBMISSIONS } from "./formConfig.js";
+
 export function isSubmittedStatus(status) {
   return status && status !== "draft";
 }
@@ -25,12 +27,31 @@ export function isSubmissionCoAuthor(record, userId) {
   return authorIds.includes(String(userId));
 }
 
+const ROLE_PERMISSION_FALLBACK = {
+  review_academic: ["reviewer"],
+  library_intake: ["library_staff"],
+  director_approval: ["director"],
+  submit_thesis: ["student", "admin"],
+  view_all_submissions: ["admin", "library_staff", "director"],
+  configure_system: ["admin"],
+};
+
+// Permissions come from /auth/me; fall back to the role until they are loaded.
+export function hasPermission(user, permission) {
+  if (!user) return false;
+  if (user.role === "admin") return true;
+  if (Array.isArray(user.permissions)) {
+    return user.permissions.includes(permission);
+  }
+  return (ROLE_PERMISSION_FALLBACK[permission] || []).includes(user.role);
+}
+
 export function studentBlocksNewDraftOrSubmit(
   submissions,
   userId,
   excludeSubmissionId,
 ) {
-  if (!userId) {
+  if (!userId || ALLOW_MULTIPLE_STUDENT_SUBMISSIONS) {
     return null;
   }
   const blocking = (submissions || []).find((item) => {

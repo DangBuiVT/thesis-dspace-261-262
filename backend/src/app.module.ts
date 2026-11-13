@@ -7,9 +7,10 @@ import { ReviewsModule } from "./reviews/reviews.module";
 import { AdminModule } from "./admin/admin.module";
 import { ArchiveModule } from "./archive/archive.module";
 import { WorkflowModule } from "./workflow/workflow.module";
+import { SigningModule } from "./signing/signing.module";
 
 @Module({
-  imports: [AuthModule, UsersModule, SubmissionsModule, ReviewsModule, AdminModule, ArchiveModule, WorkflowModule],
+  imports: [SigningModule, AuthModule, UsersModule, SubmissionsModule, ReviewsModule, AdminModule, ArchiveModule, WorkflowModule],
   controllers: [AppController]
 })
 export class AppModule {}

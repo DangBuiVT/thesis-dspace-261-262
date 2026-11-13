@@ -5,6 +5,8 @@ import {
   STRUCTURAL_FORM_KEYS,
   STRUCTURAL_NATIVE_TYPE,
   THESIS_YEAR_OPTIONS,
+  OTHER_FACULTY_VALUE,
+  WORKFLOW_STEP_FIELDS,
 } from "../model/formConfig.js";
 import { fieldDisplayLabel, optionDisplayLabel } from "../../../i18n/labels.js";
 import { authHeaders, parseResponse } from "../../../shared/api/http.js";
@@ -35,26 +37,53 @@ export function useSubmissionSchema({
 
   const isAdminActor = auth?.user?.role === "admin";
 
+  // Admin-only overrides for one submission: a hand-typed faculty and the review steps to keep.
+  const isOtherFaculty = isAdminActor && archiveFacultyId === OTHER_FACULTY_VALUE;
+
+  const workflowReviewer = Form.useWatch("workflowReviewer", submissionForm);
+
+  const workflowLibrary = Form.useWatch("workflowLibrary", submissionForm);
+
+  const workflowDirector = Form.useWatch("workflowDirector", submissionForm);
+
+  const reviewerStepOff = isAdminActor && workflowReviewer === false;
+
+  const noReviewStepsSelected =
+    isAdminActor &&
+    workflowReviewer === false &&
+    workflowLibrary === false &&
+    workflowDirector === false;
+
+  const workflowStepFields = WORKFLOW_STEP_FIELDS;
+
   const facultySelectOptions = useMemo(() => {
+    const withOther = (list) =>
+      isAdminActor
+        ? [
+            ...list,
+            { value: OTHER_FACULTY_VALUE, label: t("Other (enter faculty name)") },
+          ]
+        : list;
     const locked = isAdminActor
       ? studentOptions.find((item) => item.value === watchedStudentId)
       : auth?.user?.facultyId
         ? { facultyId: auth.user.facultyId, facultyName: auth.user.facultyName }
         : null;
     if (!locked?.facultyId) {
-      return archiveFaculties;
+      return withOther(archiveFaculties);
     }
     if (archiveFaculties.some((item) => item.value === locked.facultyId)) {
-      return archiveFaculties;
+      return withOther(archiveFaculties);
     }
-    return [
+    return withOther([
       {
         value: locked.facultyId,
         label: locked.facultyName || locked.facultyId,
       },
       ...archiveFaculties,
-    ];
+    ]);
   }, [
+    t,
     archiveFaculties,
     auth?.user?.facultyId,
     auth?.user?.facultyName,
@@ -195,6 +224,10 @@ export function useSubmissionSchema({
     archiveSemesterId,
     watchedStudentId,
     isAdminActor,
+    isOtherFaculty,
+    reviewerStepOff,
+    noReviewStepsSelected,
+    workflowStepFields,
     facultySelectOptions,
     actingStudentId,
     configurableFormFields,

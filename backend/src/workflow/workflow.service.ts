@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException, OnModuleInit } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
+import { ArchiveSigningService, signedEvidence } from "../signing/archive-signing.service";
 import type { PoolClient } from "pg";
 import { createPgPool } from "../users/db-pool";
 import { ensurePortalSchema } from "./ensure-schema";
@@ -18,6 +19,8 @@ const ROLES = new Set<WorkflowRole>(["reviewer", "library_staff", "director"]);
 @Injectable()
 export class WorkflowService implements OnModuleInit {
   private readonly db = createPgPool();
+
+  constructor(private readonly archiveSigning: ArchiveSigningService) {}
 
   async onModuleInit() {
     await ensurePortalSchema(this.db);
@@ -88,11 +91,42 @@ export class WorkflowService implements OnModuleInit {
     }
   }
 
+  /**
+   * Chép quy trình duyệt vào bài nộp.
+   * - `enabledRoles` = undefined/null: dùng quy trình chung của hệ thống.
+   * - `enabledRoles` = mảng (Admin cấu hình riêng): chỉ giữ các vai trò được bật, theo thứ tự
+   *   Phản biện → Thư viện → Giám đốc. Mảng rỗng = không cần duyệt → tự lưu chiểu + ký số.
+   */
   async snapshot(
     client: PoolClient,
-    submissionId: string
-  ): Promise<{ status: string; role: WorkflowRole }> {
-    const template = await this.listTemplate();
+    submissionId: string,
+    options?: {
+      enabledRoles?: WorkflowRole[] | null;
+      actor?: { sub: string; role: string; displayName?: string; username?: string };
+      signatureStyle?: string;
+    }
+  ): Promise<{ status: string; role: WorkflowRole | null }> {
+    let template = await this.listTemplate();
+    const enabledRoles = options?.enabledRoles;
+    if (Array.isArray(enabledRoles)) {
+      const canonical: Array<{ role: WorkflowRole; label: string }> = [
+        { role: "reviewer", label: "Review" },
+        { role: "library_staff", label: "Library" },
+        { role: "director", label: "Director" }
+      ];
+      template = canonical
+        .filter((step) => enabledRoles.includes(step.role))
+        .map((step, index) => ({
+          id: "",
+          sortOrder: index + 1,
+          role: step.role,
+          label: template.find((t) => t.role === step.role)?.label || step.label
+        }));
+      if (template.length === 0) {
+        await this.archiveWithoutReview(client, submissionId, options?.actor, options?.signatureStyle);
+        return { status: "archived", role: null };
+      }
+    }
     if (template.length === 0) {
       throw new BadRequestException("Workflow must keep at least one step");
     }
@@ -123,6 +157,88 @@ export class WorkflowService implements OnModuleInit {
       }
     }
     return { status, role: first.role };
+  }
+
+  /**
+   * Bài nộp không có bước duyệt nào (Admin tắt hết): lưu chiểu ngay và ghi nhận chữ ký số.
+   * PDF được đóng dấu khi tải xuống, dựa trên sự kiện `digital_signature_signed`.
+   */
+  private async archiveWithoutReview(
+    client: PoolClient,
+    submissionId: string,
+    actor?: { sub: string; role: string; displayName?: string; username?: string },
+    signatureStyle?: string
+  ) {
+    const before = await client.query<{ status: string }>(
+      `SELECT status FROM submissions WHERE id = $1::uuid LIMIT 1`,
+      [submissionId]
+    );
+    const fromStatus = before.rows[0]?.status || "draft";
+    await client.query(`DELETE FROM submission_steps WHERE submission_id = $1::uuid`, [submissionId]);
+    await client.query(`DELETE FROM reviews WHERE submission_id = $1::uuid`, [submissionId]);
+    await client.query(
+      `UPDATE submissions
+       SET status = 'archived',
+           current_step = NULL,
+           dspace_publish_status = COALESCE(NULLIF(dspace_publish_status, ''), 'pending')
+       WHERE id = $1::uuid`,
+      [submissionId]
+    );
+
+    const style =
+      signatureStyle === "diagonal" || signatureStyle === "invisible" || signatureStyle === "margin_strips"
+        ? signatureStyle
+        : await this.archiveSigning.defaultSignatureStyle();
+    const pagesSetting = await client.query<{ value: string }>(
+      `SELECT value FROM system_settings WHERE key = 'signature_watermark_pages' LIMIT 1`
+    );
+    const archived = await this.archiveSigning.signArchivedPdf({
+      submissionId,
+      actorSub: actor?.sub || "system",
+      actorName: actor?.displayName || actor?.username || "BKlib Admin",
+      style,
+      watermarkPages: pagesSetting.rows[0]?.value || "10",
+    });
+    const evidence = archived ? signedEvidence(archived) : null;
+    const actorRole = actor?.role || "system";
+
+    if (evidence) await client.query(
+      `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
+       VALUES ($1, $2::uuid, $3, $4, 'digital_signature_signed', $5::jsonb)`,
+      [
+        randomUUID(),
+        submissionId,
+        actor?.sub || null,
+        actorRole,
+        JSON.stringify({
+          is_signed: true,
+          auto_archived_without_review: true,
+          ...evidence,
+          institution_text: "ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT",
+          signed_pages_scope: "Tất cả các trang (100% pages)",
+          signer_name: actor?.displayName || actor?.username || "BKlib Admin",
+          signed_at: archived?.signedAt.toISOString() ?? null,
+          signature_style: style,
+          watermark_pages: pagesSetting.rows[0]?.value || "10",
+          signature_style_name:
+            style === "diagonal"
+              ? "Chữ ký số chéo trang"
+              : style === "invisible"
+                ? "Không chữ ký số (Vô hình)"
+                : "Chữ ký số 2 bên lề"
+        })
+      ]
+    );
+    await client.query(
+      `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
+       VALUES ($1, $2::uuid, $3, 'system', 'status_changed', $4::jsonb)`,
+      [
+        randomUUID(),
+        submissionId,
+        actor?.sub || null,
+        JSON.stringify({ from: fromStatus, to: "archived", reason: "admin_no_review_required" })
+      ]
+    );
   }
 
   async assertCurrentRole(submissionId: string, role: WorkflowRole) {

@@ -3,6 +3,8 @@ import {
   requestLoginOptions,
   requestLogin,
   requestPasswordChange,
+  requestRegisterOptions,
+  requestRegister,
 } from "./api.js";
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { translateApiMessage } from "../../i18n/api.js";
@@ -30,6 +32,17 @@ export function useAuthSession() {
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
 
   const [changingPassword, setChangingPassword] = useState(false);
+
+  const [registerForm] = Form.useForm();
+
+  const [registerOpen, setRegisterOpen] = useState(false);
+
+  const [registering, setRegistering] = useState(false);
+
+  const [registerFaculties, setRegisterFaculties] = useState([]);
+
+  const [loadingRegisterFaculties, setLoadingRegisterFaculties] =
+    useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -225,6 +238,66 @@ export function useAuthSession() {
     setPasswordModalOpen(false);
     message.info(t("You have been logged out"));
   };
+
+  const openRegister = async () => {
+    registerForm.resetFields();
+    setRegisterOpen(true);
+    setLoadingRegisterFaculties(true);
+    try {
+      const response = await requestRegisterOptions();
+      const payload = await parseResponse(response);
+      setRegisterFaculties(
+        response.ok && Array.isArray(payload?.faculties)
+          ? payload.faculties.map((item) => ({
+              value: item.id,
+              label: item.name,
+            }))
+          : [],
+      );
+    } catch {
+      setRegisterFaculties([]);
+    } finally {
+      setLoadingRegisterFaculties(false);
+    }
+  };
+
+  const closeRegister = () => {
+    setRegisterOpen(false);
+    registerForm.resetFields();
+  };
+
+  // Self-service student registration; the server signs the new account in.
+  const handleRegister = async (values) => {
+    setRegistering(true);
+    try {
+      const response = await requestRegister({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: values.username.trim().toLowerCase(),
+          password: values.password,
+          displayName: values.displayName.trim(),
+          ...(values.facultyId ? { facultyId: values.facultyId } : {}),
+        }),
+      });
+      const payload = await parseResponse(response);
+      if (!response.ok) {
+        throw new Error(payload?.message || "Unable to create account");
+      }
+      if (!payload?.access_token || !payload?.user) {
+        throw new Error("Invalid registration response from server");
+      }
+      const nextAuth = { token: payload.access_token, user: payload.user };
+      setAuth(nextAuth);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(nextAuth));
+      closeRegister();
+      message.success(t("Account created. You are now signed in."));
+    } catch (error) {
+      message.error(tr(error.message || "Unable to create account"));
+    } finally {
+      setRegistering(false);
+    }
+  };
   return {
     auth,
     loginForm,
@@ -237,5 +310,13 @@ export function useAuthSession() {
     handleLogin,
     handleChangePassword,
     handleLogout,
+    registerForm,
+    registerOpen,
+    registering,
+    registerFaculties,
+    loadingRegisterFaculties,
+    openRegister,
+    closeRegister,
+    handleRegister,
   };
 }

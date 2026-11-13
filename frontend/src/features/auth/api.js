@@ -7,3 +7,7 @@ export const requestLoginOptions = (options) =>
 export const requestLogin = (options) => request("/api/auth/login", options);
 export const requestPasswordChange = (options) =>
   request("/api/auth/change-password", options);
+export const requestRegisterOptions = (options) =>
+  request("/api/auth/register-options", options);
+export const requestRegister = (options) =>
+  request("/api/auth/register", options);

@@ -29,6 +29,7 @@ const labels = {
   metadata_updated: "Metadata updated",
   status_changed: "Status changed",
   reverted_to_draft: "Moved to draft",
+  digital_signature_signed: "Digitally signed",
 };
 const roles = {
   student: "Student",
@@ -70,7 +71,9 @@ export function HistoryTimeline({ items }) {
           ? "red"
           : item.eventType === "director_returned"
             ? "orange"
-            : "blue",
+            : item.eventType === "digital_signature_signed"
+              ? "purple"
+              : "blue",
         children: (
           <div className="history-event">
             <Space wrap>
@@ -88,6 +91,24 @@ export function HistoryTimeline({ items }) {
               <p>
                 {statusText(item.payload?.from, t)} →{" "}
                 {statusText(item.payload?.to, t)}
+              </p>
+            )}
+            {item.eventType === "digital_signature_signed" && (
+              <p className="signature-event">
+                {[
+                  item.payload?.algorithm,
+                  item.payload?.certificate_serial
+                    ? `${t("Certificate serial")}: ${item.payload.certificate_serial}`
+                    : null,
+                  item.payload?.tsa_status === "granted"
+                    ? `${t("Timestamped")}: ${formatDateTime(item.payload.tsa_time, lang)}`
+                    : t("No timestamp"),
+                  item.payload?.sha256_hash
+                    ? `SHA-256: ${String(item.payload.sha256_hash).slice(0, 16)}…`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
               </p>
             )}
             {(item.payload?.changes || []).map((change) => (

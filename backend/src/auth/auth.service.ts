@@ -7,8 +7,11 @@ import {
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { AdminSettingsService } from "../admin/admin-settings.service";
+import { PermissionsService } from "../users/permissions.service";
 import { ChangePasswordDto } from "./dto/change-password.dto";
 import { LoginDto } from "./dto/login.dto";
+import { RegisterDto } from "./dto/register.dto";
+import { isHashedPassword, verifyPassword } from "./password.util";
 import { GoogleAuthService } from "./google-auth.service";
 import { UsersService, type UserRecord } from "../users/users.service";
 
@@ -20,8 +23,9 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly adminSettingsService: AdminSettingsService,
-    private readonly googleAuthService: GoogleAuthService
-  ) {}
+    private readonly googleAuthService: GoogleAuthService,
+    private readonly permissionsService: PermissionsService
+  ) { }
 
   async getLoginOptions() {
     const googleConfigured = this.googleAuthService.isConfigured();
@@ -36,10 +40,14 @@ export class AuthService {
     if (method === "google" && user?.role !== "admin") {
       throw new ForbiddenException("Password login is disabled. Use Google sign-in.");
     }
-    if (!user || !user.password || user.password !== payload.password) {
+    if (!user || !user.password || !(await verifyPassword(payload.password, user.password))) {
       throw new UnauthorizedException("Invalid username or password");
     }
     await this.assertUserMaySignIn(user);
+    if (!isHashedPassword(user.password)) {
+      // Nâng cấp mật khẩu cũ (plaintext) sang bản băm sau khi đăng nhập thành công.
+      await this.usersService.updatePassword(user.username, payload.password);
+    }
     return this.sessionResponse(user);
   }
 
@@ -63,10 +71,10 @@ export class AuthService {
       throw new UnauthorizedException("This account has been disabled");
     }
     if (user.password) {
-      if (!input.currentPassword || input.currentPassword !== user.password) {
+      if (!input.currentPassword || !(await verifyPassword(input.currentPassword, user.password))) {
         throw new BadRequestException("Current password is incorrect");
       }
-      if (input.newPassword === user.password) {
+      if (await verifyPassword(input.newPassword, user.password)) {
         throw new BadRequestException("New password must be different from the current password");
       }
     }
@@ -122,7 +130,7 @@ export class AuthService {
         })) || existing;
 
       await this.assertUserMaySignIn(user);
-      const { access_token } = this.sessionResponse(user);
+      const { access_token } = await this.sessionResponse(user);
       return `${frontend}/?access_token=${encodeURIComponent(access_token)}`;
     } catch (error) {
       if (error instanceof UnauthorizedException) {
@@ -139,6 +147,44 @@ export class AuthService {
     }
   }
 
+  async getRegisterOptions() {
+    const faculties = await this.usersService.listActiveFaculties();
+    return { faculties };
+  }
+
+  async register(input: RegisterDto) {
+    const username = input.username.trim().toLowerCase().replace(/@.*$/, "");
+    const existing = await this.usersService.findByUsername(username);
+    if (existing) {
+      throw new BadRequestException("Tên đăng nhập đã tồn tại. Vui lòng chọn tên khác.");
+    }
+    if (!username || username.length < 2) {
+      throw new BadRequestException("Tên đăng nhập phải có ít nhất 2 ký tự.");
+    }
+    if (!input.password || input.password.length < 6) {
+      throw new BadRequestException("Mật khẩu phải có ít nhất 6 ký tự.");
+    }
+    if (!input.displayName || input.displayName.trim().length < 2) {
+      throw new BadRequestException("Họ và tên phải có ít nhất 2 ký tự.");
+    }
+    let facultyId: string | undefined;
+    if (input.facultyId) {
+      const faculty = await this.usersService.findActiveFaculty(input.facultyId);
+      if (!faculty) {
+        throw new BadRequestException("Faculty not found");
+      }
+      facultyId = faculty.id;
+    }
+    const user = await this.usersService.createUser({
+      username,
+      password: input.password,
+      displayName: input.displayName.trim(),
+      role: "student",
+      facultyId: facultyId
+    });
+    return this.sessionResponse(user);
+  }
+
   private async assertUserMaySignIn(user: UserRecord) {
     if (user.status === "disabled") {
       throw new UnauthorizedException("This account has been disabled");
@@ -149,8 +195,8 @@ export class AuthService {
     }
   }
 
-  private sessionResponse(user: UserRecord) {
-    const publicUser = this.publicUser(user);
+  private async sessionResponse(user: UserRecord) {
+    const publicUser = await this.publicUser(user);
     const accessToken = this.jwtService.sign({
       sub: user.username,
       username: user.username,
@@ -164,7 +210,8 @@ export class AuthService {
     };
   }
 
-  private publicUser(user: UserRecord) {
+  private async publicUser(user: UserRecord) {
+    const permissions = Array.from(await this.permissionsService.getAllowedPermissions(user.role));
     return {
       id: user.id,
       username: user.username,
@@ -173,7 +220,8 @@ export class AuthService {
       email: user.email,
       facultyId: user.facultyId,
       facultyName: user.facultyName,
-      hasPassword: Boolean(user.password)
+      hasPassword: Boolean(user.password),
+      permissions
     };
   }
 }

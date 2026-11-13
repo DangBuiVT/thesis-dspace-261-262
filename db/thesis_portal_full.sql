@@ -154,10 +154,6 @@ CREATE INDEX idx_submissions_status ON submissions (status);
 CREATE INDEX idx_submissions_student_id ON submissions (student_id);
 CREATE INDEX idx_submissions_period_id ON submissions (submission_period_id);
 
-CREATE UNIQUE INDEX idx_submissions_one_active_per_student
-  ON submissions (student_id)
-  WHERE status <> 'draft';
-
 CREATE UNIQUE INDEX idx_submissions_one_draft_per_student
   ON submissions (student_id)
   WHERE status = 'draft';
@@ -291,6 +287,7 @@ SET
 
 INSERT INTO users (username, password, display_name, auth_source, role, faculty_id) VALUES
   ('student1', 'student123', 'Student Alpha', 'local', 'student', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0005'),
+  ('student2', 'student123', 'Student Beta', 'local', 'student', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0005'),
   ('tuan.ngonhat', 'student123', 'Ngo Nhat Tuan', 'local', 'student', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0005'),
   ('reviewer1', 'review123', 'Reviewer One', 'local', 'reviewer', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0005'),
   ('admin1', 'admin123', 'Admin One', 'local', 'admin', NULL),
@@ -354,6 +351,8 @@ INSERT INTO system_settings (key, value, description) VALUES
   ('submission_timezone', 'Asia/Ho_Chi_Minh', 'Timezone for submission period open/close times'),
   ('library_support_phone', '3864 7256 (5419)', 'Library reference desk contact for deposit support'),
   ('maintenance_mode', 'false', 'When true, only administrators can sign in'),
+  ('signature_style', 'margin_strips', 'Default visible signature style on archived PDFs: margin_strips, diagonal or invisible'),
+  ('signature_watermark_pages', '10', 'Pages that receive the HCMUT logo watermark, e.g. 10 or 10,15 or 10-12'),
   ('login_method', 'username', 'Sign-in method for non-admin users: username (password form) or google (@hcmut.edu.vn). Admins can always use username/password.'),
   ('dspace_root_community_id', '7fd5cbb5-d2a1-4235-b5b0-7f5894771417', 'DSpace UUID of root archive community. Used as parent when provisioning faculties, and as starting point for Sync from DSpace (map faculty / semester / period by name).'),
   ('dspace_api_base_url', 'http://host.docker.internal:8080/server', 'DSpace REST API base URL e.g. http://host.docker.internal:8080/server'),

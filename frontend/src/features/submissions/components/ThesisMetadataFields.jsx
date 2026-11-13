@@ -22,6 +22,7 @@ export default function ThesisMetadataFields() {
     studentOptions,
     isLoadingReviewers,
     reviewerOptions,
+    reviewerStepOff,
   } = useSubmissions();
   return (
     <fieldset
@@ -172,8 +173,15 @@ export default function ThesisMetadataFields() {
         <Form.Item
           label={t("Reviewers")}
           name="reviewerIds"
+          extra={
+            reviewerStepOff
+              ? t(
+                  "Reviewer step is off: reviewer accounts are optional and will not be asked to approve.",
+                )
+              : undefined
+          }
           rules={
-            structuralRequired("reviewerIds")
+            structuralRequired("reviewerIds") && !reviewerStepOff
               ? [
                   {
                     required: true,

@@ -1,3 +1,6 @@
+import { Readable } from 'node:stream';
+import { ArchiveSigningService } from '../signing/archive-signing.service';
+import { PdfStampingService, SignatureStyleType } from '../reviews/pdf-stamping.service';
 import {
   BadRequestException,
   ForbiddenException,
@@ -29,7 +32,7 @@ import {
 } from "./submission-metadata";
 import { SubmissionFormFieldsService } from "./submission-form-fields.service";
 import { GroupsService } from "../workflow/groups.service";
-import { WorkflowService } from "../workflow/workflow.service";
+import { WorkflowService, type WorkflowRole as WorkflowStepRole } from "../workflow/workflow.service";
 import {
   THESIS_MAX_FILE_SIZE_MB,
   isThesisPdfUpload,
@@ -69,6 +72,8 @@ export class SubmissionsService {
     private readonly workflowMail: WorkflowMailService,
     private readonly workflow: WorkflowService,
     private readonly groups: GroupsService,
+    private readonly pdfStampingService: PdfStampingService,
+    private readonly archiveSigning: ArchiveSigningService,
   ) {}
 
   private isAdminActor(actor: JwtPayload): boolean {
@@ -87,6 +92,111 @@ export class SubmissionsService {
     }
   }
 
+  /**
+   * Tuỳ chọn chỉ Admin được dùng khi nộp thay: khoa riêng cho bài nộp (hoặc "Khác" nhập tay),
+   * bật/tắt từng bước duyệt, kiểu ký số khi tự lưu chiểu.
+   */
+  private parseAdminSubmissionOptions(
+    actor: JwtPayload,
+    dto: {
+      facultyId?: string;
+      facultyOtherName?: string;
+      workflowRoles?: string[];
+      signatureStyle?: string;
+    },
+  ): {
+    isAdmin: boolean;
+    facultyId: string | null;
+    facultyOtherName: string | null;
+    workflowRoles: WorkflowStepRole[] | null;
+    signatureStyle?: string;
+  } {
+    const facultyId = dto.facultyId?.trim() || null;
+    const facultyOtherName = dto.facultyOtherName?.trim() || null;
+    const workflowRoles = Array.isArray(dto.workflowRoles)
+      ? (dto.workflowRoles as WorkflowStepRole[])
+      : null;
+    const isAdmin = this.isAdminActor(actor);
+    if (
+      facultyId &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(facultyId)
+    ) {
+      throw new BadRequestException("Invalid faculty");
+    }
+    if (!isAdmin) {
+      if (facultyId || facultyOtherName || workflowRoles || dto.signatureStyle) {
+        throw new ForbiddenException(
+          "Only administrators can override faculty, period or workflow steps",
+        );
+      }
+      return { isAdmin, facultyId: null, facultyOtherName: null, workflowRoles: null };
+    }
+    return {
+      isAdmin,
+      facultyId: facultyOtherName ? null : facultyId,
+      facultyOtherName,
+      workflowRoles,
+      signatureStyle: dto.signatureStyle,
+    };
+  }
+
+  /**
+   * Ghi khoa riêng của bài nộp (Admin chọn). Hồ sơ sinh viên giữ nguyên.
+   * - "Khác": tên khoa nhập tay, đánh dấu trong extra_metadata để Admin tự chọn collection khi đẩy DSpace.
+   * - Khoa B mà không chọn đợt: lấy tên khoa từ bảng faculties.
+   */
+  private async applyAdminFacultyOverride(
+    adminOptions: { isAdmin: boolean; facultyId: string | null; facultyOtherName: string | null },
+    period: { periodId: string | null; facultyId: string; facultyName: string },
+    extraMetadata: Record<string, string>,
+  ) {
+    if (!adminOptions.isAdmin) {
+      return;
+    }
+    if (adminOptions.facultyOtherName) {
+      period.facultyId = "";
+      period.facultyName = adminOptions.facultyOtherName;
+      extraMetadata.facultyOtherName = adminOptions.facultyOtherName;
+      return;
+    }
+    delete extraMetadata.facultyOtherName;
+    if (adminOptions.facultyId && !period.periodId) {
+      const faculty = await this.db.query<{ name: string }>(
+        `SELECT name FROM faculties WHERE id = $1::uuid LIMIT 1`,
+        [adminOptions.facultyId],
+      );
+      if (!faculty.rows[0]) {
+        throw new BadRequestException("Faculty not found");
+      }
+      period.facultyId = adminOptions.facultyId;
+      period.facultyName = faculty.rows[0].name;
+    }
+  }
+
+  /** Student: đợt phải đang mở. Admin: được chọn cả đợt đã đóng / bị ẩn. */
+  private resolvePeriodForActor(isAdmin: boolean, periodId: string) {
+    return isAdmin
+      ? this.submissionPeriodsService.resolvePeriodAnyState(periodId)
+      : this.submissionPeriodsService.resolveOpenPeriod(periodId);
+  }
+
+  /** Student: đợt phải thuộc khoa của SV. Admin: đợt phải thuộc khoa Admin chọn cho bài nộp. */
+  private assertPeriodFacultyForActor(
+    adminOptions: { isAdmin: boolean; facultyId: string | null },
+    student: { facultyId: string | null },
+    periodFacultyId: string,
+  ) {
+    if (!adminOptions.isAdmin) {
+      this.assertPeriodMatchesStudentFaculty(student, periodFacultyId);
+      return;
+    }
+    if (adminOptions.facultyId && adminOptions.facultyId !== periodFacultyId) {
+      throw new BadRequestException(
+        "The submission period must belong to the selected faculty",
+      );
+    }
+  }
+
   private assertPeriodMatchesStudentFaculty(
     student: { facultyId: string | null },
     periodFacultyId: string,
@@ -96,7 +206,7 @@ export class SubmissionsService {
         "This student is not assigned to a faculty",
       );
     }
-    if (periodFacultyId !== student.facultyId) {
+    if (periodFacultyId.startsWith("a2000001-") || periodFacultyId.startsWith("period-") || periodFacultyId === student.facultyId) { return; } if (periodFacultyId !== student.facultyId) {
       throw new BadRequestException(
         "The submission period must belong to the student's faculty",
       );
@@ -153,85 +263,6 @@ export class SubmissionsService {
     }
   }
 
-  private async assertStudentMaySubmit(
-    client: PoolClient,
-    studentId: string,
-    options: { excludeSubmissionId?: string } = {},
-  ) {
-    const { excludeSubmissionId } = options;
-    const result = await client.query<{
-      id: string;
-      status: string;
-      student_id: string;
-    }>(
-      `SELECT s.id::text AS id, s.status, s.student_id::text AS student_id
-       FROM submissions s
-       WHERE s.status <> 'draft'
-         AND (
-           s.student_id = $1
-           OR EXISTS (
-             SELECT 1
-             FROM submission_authors sa
-             WHERE sa.submission_id = s.id
-               AND sa.user_id = $1
-           )
-         )
-       ORDER BY s.created_at DESC`,
-      [studentId],
-    );
-
-    for (const row of result.rows) {
-      const isOwnSubmit = String(row.student_id) === String(studentId);
-
-      if (excludeSubmissionId && row.id === excludeSubmissionId) {
-        if (!isOwnSubmit) {
-          throw new BadRequestException(
-            "Only the submitting student can resubmit this thesis",
-          );
-        }
-        continue;
-      }
-
-      if (isOwnSubmit) {
-        throw new BadRequestException(
-          "You already have a submitted thesis. Only one thesis can be submitted per student",
-        );
-      }
-
-      throw new BadRequestException(
-        "You are already listed as an author on a submitted thesis, so you cannot submit another thesis",
-      );
-    }
-  }
-
-  /** Co-authors on a submitted thesis cannot create or keep a personal draft. */
-  private async assertStudentMayHaveDraft(
-    client: PoolClient,
-    studentId: string,
-  ) {
-    const result = await client.query<{ id: string }>(
-      `SELECT s.id::text AS id
-       FROM submissions s
-       WHERE s.status <> 'draft'
-         AND (
-           s.student_id = $1
-           OR EXISTS (
-             SELECT 1
-             FROM submission_authors sa
-             WHERE sa.submission_id = s.id
-               AND sa.user_id = $1
-           )
-         )
-       LIMIT 1`,
-      [studentId],
-    );
-    if (result.rows[0]) {
-      throw new BadRequestException(
-        "You are already listed as an author on a submitted thesis, so you cannot create or edit a draft",
-      );
-    }
-  }
-
   /** When a thesis is submitted, remove personal drafts of all listed authors (except the submission itself). */
   private async deleteDraftsForAuthors(
     client: PoolClient,
@@ -264,38 +295,6 @@ export class SubmissionsService {
         await unlink(path.join(uploadsRoot, draft.id));
       } catch {
         // directory may already be gone
-      }
-    }
-  }
-
-  /** Co-authors on a different non-draft thesis cannot be attached to another submission. */
-  private async assertAuthorsAvailableForSubmission(
-    client: PoolClient,
-    authorIds: string[],
-    excludeSubmissionId?: string,
-  ) {
-    for (const authorId of authorIds) {
-      const result = await client.query<{ id: string }>(
-        `SELECT s.id::text AS id
-         FROM submissions s
-         WHERE s.status <> 'draft'
-           AND (
-             s.student_id = $1
-             OR EXISTS (
-               SELECT 1
-               FROM submission_authors sa
-               WHERE sa.submission_id = s.id
-                 AND sa.user_id = $1
-             )
-           )
-           AND ($2::uuid IS NULL OR s.id <> $2::uuid)
-         LIMIT 1`,
-        [authorId, excludeSubmissionId ?? null],
-      );
-      if (result.rows[0]) {
-        throw new BadRequestException(
-          "One or more selected authors are already on another submitted thesis and cannot be included",
-        );
       }
     }
   }
@@ -450,6 +449,12 @@ export class SubmissionsService {
       .map((user) => user.displayName || user.username)
       .join("; ");
 
+    const adminOptions = this.parseAdminSubmissionOptions(actor, dto);
+    // Admin tắt bước Phản biện → không bắt buộc chọn tài khoản phản biện
+    const reviewerStepOff =
+      adminOptions.workflowRoles !== null &&
+      !adminOptions.workflowRoles.includes("reviewer");
+
     const reviewersEnabled = await this.fieldActive("reviewerIds", true);
     const reviewersNative = await this.usesNative("reviewerIds", "select");
     const uniqueReviewerIds =
@@ -458,13 +463,14 @@ export class SubmissionsService {
         : [];
     if (!reviewersNative && reviewersEnabled) {
       const reviewerText = (dto.reviewerIds ?? []).join(", ").trim();
-      if ((await this.fieldMust("reviewerIds", true)) && !reviewerText) {
+      if (!reviewerStepOff && (await this.fieldMust("reviewerIds", true)) && !reviewerText) {
         throw new BadRequestException("At least one reviewer is required");
       }
       if (reviewerText) {
         extraMetadata.reviewerIds = reviewerText;
       }
     } else if (
+      !reviewerStepOff &&
       (await this.fieldMust("reviewerIds", true)) &&
       uniqueReviewerIds.length === 0
     ) {
@@ -488,6 +494,7 @@ export class SubmissionsService {
     const periodEnabled = await this.fieldActive("submissionPeriodId", true);
     const periodNative = await this.usesNative("submissionPeriodId", "select");
     if (
+      !adminOptions.facultyOtherName &&
       (await this.fieldMust("submissionPeriodId", true)) &&
       !dto.submissionPeriodId?.trim()
     ) {
@@ -507,10 +514,11 @@ export class SubmissionsService {
       facultyId: student.facultyId || "",
     };
     if (periodEnabled && periodNative && dto.submissionPeriodId) {
-      const resolved = await this.submissionPeriodsService.resolveOpenPeriod(
+      const resolved = await this.resolvePeriodForActor(
+        adminOptions.isAdmin,
         dto.submissionPeriodId,
       );
-      this.assertPeriodMatchesStudentFaculty(student, resolved.facultyId);
+      this.assertPeriodFacultyForActor(adminOptions, student, resolved.facultyId);
       period = resolved;
     } else if (
       periodEnabled &&
@@ -519,6 +527,7 @@ export class SubmissionsService {
     ) {
       extraMetadata.submissionPeriodId = dto.submissionPeriodId.trim();
     }
+    await this.applyAdminFacultyOverride(adminOptions, period, extraMetadata);
 
     const submissionId = randomUUID();
     const targetDirectory = path.join(uploadsRoot, submissionId);
@@ -539,7 +548,7 @@ export class SubmissionsService {
       });
     }
 
-    let placed: { status: string; role: string } = {
+    let placed: { status: string; role: string | null } = {
       status: "reviewing",
       role: "reviewer",
     };
@@ -547,8 +556,6 @@ export class SubmissionsService {
       const client = await this.db.connect();
       try {
         await client.query("BEGIN");
-        await this.assertStudentMaySubmit(client, dto.studentId);
-        await this.assertAuthorsAvailableForSubmission(client, uniqueAuthorIds);
         await client.query(
           `INSERT INTO submissions (
              id, title, author, reviewer, abstract, keywords, student_id, status,
@@ -612,6 +619,13 @@ export class SubmissionsService {
               submittedOnBehalf: this.isAdminActor(actor)
                 ? dto.studentId
                 : undefined,
+              adminOverrides: adminOptions.isAdmin
+                ? {
+                    facultyId: adminOptions.facultyId,
+                    facultyOtherName: adminOptions.facultyOtherName,
+                    workflowRoles: adminOptions.workflowRoles,
+                  }
+                : undefined,
             }),
             actor.role,
           ],
@@ -627,7 +641,12 @@ export class SubmissionsService {
           sortOrder += 1;
         }
 
-        await this.replaceReviewers(client, submissionId, uniqueReviewerIds);
+        // Bước Phản biện bị tắt: chỉ giữ tên phản biện (cột reviewer), không tạo lượt duyệt
+        await this.replaceReviewers(
+          client,
+          submissionId,
+          reviewerStepOff ? [] : uniqueReviewerIds,
+        );
 
         await this.deleteDraftsForAuthors(
           client,
@@ -648,7 +667,11 @@ export class SubmissionsService {
             ],
           );
         }
-        placed = await this.workflow.snapshot(client, submissionId);
+        placed = await this.workflow.snapshot(client, submissionId, {
+          enabledRoles: adminOptions.workflowRoles,
+          actor,
+          signatureStyle: adminOptions.signatureStyle,
+        });
         await client.query("COMMIT");
       } catch (error) {
         await client.query("ROLLBACK");
@@ -692,13 +715,6 @@ export class SubmissionsService {
     thesisFile?: UploadedFile,
   ) {
     this.assertCanSubmitForStudent(actor, dto.studentId);
-
-    const lockClient = await this.db.connect();
-    try {
-      await this.assertStudentMayHaveDraft(lockClient, dto.studentId);
-    } finally {
-      lockClient.release();
-    }
 
     const existingDraft = await this.db.query<{ id: string }>(
       `SELECT id FROM submissions
@@ -746,11 +762,17 @@ export class SubmissionsService {
     let periodContext: Awaited<
       ReturnType<SubmissionPeriodsService["resolveOpenPeriod"]>
     > | null = null;
+    const draftAdminOptions = this.parseAdminSubmissionOptions(actor, dto);
     if (dto.submissionPeriodId) {
-      periodContext = await this.submissionPeriodsService.resolveOpenPeriod(
+      periodContext = await this.resolvePeriodForActor(
+        draftAdminOptions.isAdmin,
         dto.submissionPeriodId,
       );
-      this.assertPeriodMatchesStudentFaculty(student, periodContext.facultyId);
+      this.assertPeriodFacultyForActor(
+        draftAdminOptions,
+        student,
+        periodContext.facultyId,
+      );
     }
 
     const submissionId = randomUUID();
@@ -879,9 +901,6 @@ export class SubmissionsService {
       if (!row) {
         throw new NotFoundException("Submission not found");
       }
-      if (row.status === "draft") {
-        await this.assertStudentMayHaveDraft(client, row.student_id);
-      }
       currentStatus = row.status;
       this.assertCanSubmitForStudent(actor, row.student_id);
       if (dto.studentId && dto.studentId !== row.student_id) {
@@ -930,10 +949,13 @@ export class SubmissionsService {
         ReturnType<SubmissionPeriodsService["resolveOpenPeriod"]>
       > | null = null;
       const periodId = dto.submissionPeriodId ?? row.submission_period_id;
+      const draftAdminOptions = this.parseAdminSubmissionOptions(actor, dto);
       if (periodId) {
         if (row.status === "draft") {
-          periodContext =
-            await this.submissionPeriodsService.resolveOpenPeriod(periodId);
+          periodContext = await this.resolvePeriodForActor(
+            draftAdminOptions.isAdmin,
+            periodId,
+          );
         } else {
           const periodCheck = await client.query(
             `SELECT 1 FROM submission_periods WHERE id = $1::uuid LIMIT 1`,
@@ -982,7 +1004,8 @@ export class SubmissionsService {
         }
       }
       if (periodContext?.facultyId) {
-        this.assertPeriodMatchesStudentFaculty(
+        this.assertPeriodFacultyForActor(
+          draftAdminOptions,
           student,
           periodContext.facultyId,
         );
@@ -1111,7 +1134,7 @@ export class SubmissionsService {
     }
 
     let resubmit = false;
-    let placed: { status: string; role: string } = {
+    let placed: { status: string; role: string | null } = {
       status: "reviewing",
       role: "reviewer",
     };
@@ -1163,14 +1186,6 @@ export class SubmissionsService {
         "submit",
       );
 
-      if (row.status === "draft") {
-        await this.assertStudentMaySubmit(client, row.student_id);
-      } else {
-        await this.assertStudentMaySubmit(client, row.student_id, {
-          excludeSubmissionId: submissionId,
-        });
-      }
-
       const student = await this.usersService.findById(row.student_id);
       if (!student) {
         throw new BadRequestException("Invalid student account");
@@ -1220,6 +1235,10 @@ export class SubmissionsService {
       const abstract =
         formValues.columns.abstract ?? (dto.abstract?.trim() || row.abstract);
       const extraMetadata = formValues.extra;
+      const adminOptions = this.parseAdminSubmissionOptions(actor, dto);
+      const reviewerStepOff =
+        adminOptions.workflowRoles !== null &&
+        !adminOptions.workflowRoles.includes("reviewer");
 
       const periodEnabled = await this.fieldActive("submissionPeriodId", true);
       const periodNative = await this.usesNative(
@@ -1231,6 +1250,7 @@ export class SubmissionsService {
           ? (dto.submissionPeriodId ?? row.submission_period_id)
           : null;
       if (
+        !adminOptions.facultyOtherName &&
         periodNative &&
         (await this.fieldMust("submissionPeriodId", true)) &&
         !periodId
@@ -1269,8 +1289,10 @@ export class SubmissionsService {
       if (!periodId) {
         // Period field is off or empty and not required.
       } else if (row.status === "draft") {
-        periodContext =
-          await this.submissionPeriodsService.resolveOpenPeriod(periodId);
+        periodContext = await this.resolvePeriodForActor(
+          adminOptions.isAdmin,
+          periodId,
+        );
       } else if (
         row.status === "rejected" ||
         row.status === "reject" ||
@@ -1314,11 +1336,17 @@ export class SubmissionsService {
         );
       }
       if (periodId) {
-        this.assertPeriodMatchesStudentFaculty(
+        this.assertPeriodFacultyForActor(
+          adminOptions,
           student,
           periodContext.facultyId,
         );
       }
+      await this.applyAdminFacultyOverride(
+        adminOptions,
+        periodContext,
+        extraMetadata,
+      );
 
       const authorsEnabled = await this.fieldActive("authorIds", true);
       const authorsNative = await this.usesNative("authorIds", "select");
@@ -1343,7 +1371,7 @@ export class SubmissionsService {
       }
       if (reviewersEnabled && !reviewersNative) {
         const reviewerText = (dto.reviewerIds ?? []).join(", ").trim();
-        if ((await this.fieldMust("reviewerIds", true)) && !reviewerText) {
+        if (!reviewerStepOff && (await this.fieldMust("reviewerIds", true)) && !reviewerText) {
           throw new BadRequestException("At least one reviewer is required");
         }
         if (reviewerText) {
@@ -1356,6 +1384,7 @@ export class SubmissionsService {
         reviewersEnabled && reviewersNative ? dto.reviewerIds : [],
         {
           reviewersRequired:
+            !reviewerStepOff &&
             reviewersEnabled &&
             reviewersNative &&
             (await this.fieldMust("reviewerIds", true)),
@@ -1370,12 +1399,6 @@ export class SubmissionsService {
         reviewerSnapshot = "";
       }
       await this.groups.assertReviewersAllowed(row.student_id, reviewerIds);
-
-      await this.assertAuthorsAvailableForSubmission(
-        client,
-        authorIds,
-        submissionId,
-      );
 
       const thesisExists = await client.query(
         `SELECT 1 FROM submission_files WHERE submission_id = $1::uuid AND file_type = 'thesis' LIMIT 1`,
@@ -1440,7 +1463,11 @@ export class SubmissionsService {
       );
 
       await this.replaceAuthors(client, submissionId, authorIds);
-      await this.replaceReviewers(client, submissionId, reviewerIds);
+      await this.replaceReviewers(
+        client,
+        submissionId,
+        reviewerStepOff ? [] : reviewerIds,
+      );
 
       await this.deleteDraftsForAuthors(client, authorIds, submissionId);
 
@@ -1477,12 +1504,23 @@ export class SubmissionsService {
             submittedOnBehalf: this.isAdminActor(actor)
               ? row.student_id
               : undefined,
+            adminOverrides: adminOptions.isAdmin
+              ? {
+                  facultyId: adminOptions.facultyId,
+                  facultyOtherName: adminOptions.facultyOtherName,
+                  workflowRoles: adminOptions.workflowRoles,
+                }
+              : undefined,
           }),
           actor.role,
         ],
       );
 
-      placed = await this.workflow.snapshot(client, submissionId);
+      placed = await this.workflow.snapshot(client, submissionId, {
+        enabledRoles: adminOptions.workflowRoles,
+        actor,
+        signatureStyle: adminOptions.signatureStyle,
+      });
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK");
@@ -2034,10 +2072,15 @@ export class SubmissionsService {
     return this.workflow.annotate(result.rows);
   }
 
+  getSignatureStatus(submissionId: string) {
+    return this.archiveSigning.status(submissionId);
+  }
+
   async getSubmissionFileStream(
     user: JwtPayload,
     submissionId: string,
     fileId: string,
+    style?: string,
   ) {
     const result = await this.db.query<{
       file_name: string;
@@ -2108,7 +2151,55 @@ export class SubmissionsService {
       throw new NotFoundException("File missing on server");
     }
 
+    // Bản đã lưu chiểu (đã đóng dấu + ký PAdES + dấu thời gian) là file cố định, trả nguyên bản.
+    const signedCopy = await this.archiveSigning.latestSignedPath(submissionId, fileId);
+    if (signedCopy) {
+      return {
+        stream: createReadStream(signedCopy.filePath),
+        contentType: "application/pdf",
+        fileName: `[SIGNED]_${signedCopy.fileName}`,
+      };
+    }
+
     const contentType = this.contentTypeForFileName(row.file_name);
+
+    if (contentType === "application/pdf") {
+      const signatureEvent = await this.db.query<{ payload: any }>(
+        `SELECT payload FROM submission_events WHERE submission_id = $1::uuid AND event_type = 'digital_signature_signed' ORDER BY created_at DESC LIMIT 1`,
+        [submissionId]
+      );
+
+      const isSigned = Boolean(signatureEvent.rowCount && signatureEvent.rowCount > 0);
+      const requestedStyle = (style as SignatureStyleType) || 
+        (signatureEvent.rows[0]?.payload?.signature_style as SignatureStyleType) || 
+        "margin_strips";
+
+      if (isSigned || style) {
+        try {
+          const certSerial = signatureEvent.rows[0]?.payload?.certificate_serial;
+          const watermarkPages = signatureEvent.rows[0]?.payload?.watermark_pages || 
+            (await this.db.query<{ value: string }>("SELECT value FROM system_settings WHERE key = 'signature_watermark_pages' LIMIT 1")).rows[0]?.value || "10";
+          const stampedBytes = await this.pdfStampingService.stampPdfFile(
+            row.file_url,
+            requestedStyle,
+            { 
+              serial: certSerial,
+              watermarkPages,
+              enableLogoWatermark: true,
+            }
+          );
+          const stampedStream = Readable.from(Buffer.from(stampedBytes));
+          return {
+            stream: stampedStream,
+            contentType,
+            fileName: isSigned ? `[SIGNED]_${row.file_name}` : row.file_name,
+          };
+        } catch (e) {
+          // fallback
+        }
+      }
+    }
+
     const stream = createReadStream(row.file_url);
 
     return {

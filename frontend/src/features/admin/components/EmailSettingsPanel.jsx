@@ -71,7 +71,8 @@ export default function EmailSettingsPanel() {
         <Button
           type="primary"
           htmlType="submit"
-          loading={savingSettings || loadingSettings}
+          loading={savingSettings}
+          disabled={loadingSettings}
         >
           {t("Save email configuration")}
         </Button>

@@ -23,7 +23,70 @@ const STRUCTURAL_FIELDS: Array<{
 ];
 
 export async function ensurePortalSchema(db: Pool) {
+  await db.query(`
+    INSERT INTO system_settings (key, value, description) VALUES
+      ('signature_style', 'margin_strips', 'Default visible signature style on archived PDFs: margin_strips, diagonal or invisible'),
+      ('signature_watermark_pages', '10', 'Pages that receive the HCMUT logo watermark, e.g. 10 or 10,15 or 10-12')
+    ON CONFLICT (key) DO NOTHING
+  `);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS submission_signed_files (
+      id UUID PRIMARY KEY,
+      submission_id UUID NOT NULL,
+      source_file_id UUID,
+      file_name TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      sha256 TEXT NOT NULL,
+      signature_style TEXT,
+      certificate_serial TEXT,
+      issuer TEXT,
+      signed_at TIMESTAMPTZ NOT NULL,
+      tsa_url TEXT,
+      tsa_status TEXT,
+      tsa_time TIMESTAMPTZ,
+      signer_sub TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
   await db.query(`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS current_step INT`);
+  await db.query(`DROP INDEX IF EXISTS idx_submissions_one_active_per_student`);
+  try {
+    await db.query(`
+      INSERT INTO faculties (id, name, status)
+      VALUES ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0005', 'Khoa Khoa học và Kỹ thuật Máy tính', 'active')
+      ON CONFLICT (id) DO NOTHING;
+
+      INSERT INTO semesters (id, faculty_id, name, status)
+      VALUES 
+        ('c1000001-0001-4000-8000-000000000001', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0005', 'Học kỳ 1 / 2026-2027 (HK261)', 'active'),
+        ('c1000001-0001-4000-8000-000000000002', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0005', 'Học kỳ 2 / 2025-2026 (HK252)', 'active'),
+        ('c1000001-0001-4000-8000-000000000003', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0005', 'Học kỳ Hè 2026 (HK253)', 'active')
+      ON CONFLICT (id) DO NOTHING;
+
+      INSERT INTO submission_periods (id, semester_id, name, opens_at, closes_at, status, allow_resubmit)
+      VALUES (
+        'a2000001-0001-4000-8000-000000000001',
+        'c1000001-0001-4000-8000-000000000001',
+        'Đợt 1 - Bảo vệ & Lưu chiểu Luận văn Thạc sĩ (Đang mở)',
+        NOW() - INTERVAL '30 days',
+        NOW() + INTERVAL '90 days',
+        'open',
+        TRUE
+      ),
+      (
+        'a2000001-0001-4000-8000-000000000002',
+        'c1000001-0001-4000-8000-000000000001',
+        'Đợt 2 - Lưu chiểu Luận văn tốt nghiệp (Đang mở)',
+        NOW() - INTERVAL '30 days',
+        NOW() + INTERVAL '120 days',
+        'open',
+        TRUE
+      )
+      ON CONFLICT (id) DO NOTHING;
+    `);
+  } catch (_e) {
+    // Ignore if table not yet created
+  }
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS workflow_steps (

@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import { hashPassword } from "../auth/password.util";
 import { createPgPool } from "./db-pool";
 import type { UserRole } from "./user-role";
 
@@ -81,7 +82,10 @@ export class UsersService {
   }
 
   async updatePassword(username: string, password: string): Promise<void> {
-    await this.db.query(`UPDATE users SET password = $2 WHERE username = $1`, [username, password]);
+    await this.db.query(`UPDATE users SET password = $2 WHERE username = $1`, [
+      username,
+      await hashPassword(password),
+    ]);
   }
 
   async updateProfileFromGoogle(
@@ -98,6 +102,36 @@ export class UsersService {
       [username, input.displayName]
     );
     return this.findByUsername(username);
+  }
+
+  async listActiveFaculties() {
+    const result = await this.db.query<{ id: string; name: string }>(
+      `SELECT id, name FROM faculties WHERE status = 'active' ORDER BY name ASC`
+    );
+    return result.rows;
+  }
+
+  async findActiveFaculty(facultyId: string): Promise<{ id: string; name: string } | undefined> {
+    const result = await this.db.query<{ id: string; name: string }>(
+      `SELECT id, name FROM faculties WHERE id = $1::uuid AND status = 'active' LIMIT 1`,
+      [facultyId]
+    );
+    return result.rows[0];
+  }
+
+  async createUser(input: {
+    username: string;
+    password: string;
+    displayName: string;
+    role: UserRole;
+    facultyId?: string | null;
+  }): Promise<UserRecord> {
+    await this.db.query(
+      `INSERT INTO users (username, password, display_name, role, status, auth_source, faculty_id)
+       VALUES ($1, $2, $3, $4, 'active', 'local', $5)`,
+      [input.username.trim().toLowerCase(), await hashPassword(input.password), input.displayName.trim(), input.role, input.facultyId ?? null]
+    );
+    return (await this.findByUsername(input.username))!;
   }
 
   async listByRole(role: UserRole) {

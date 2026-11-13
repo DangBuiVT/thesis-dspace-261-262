@@ -6,7 +6,7 @@ import {
   Delete,
   ForbiddenException,
   Get,
-  Param,
+  Param, Query,
   Patch,
   Post,
   Req,
@@ -212,6 +212,18 @@ export class SubmissionsController {
     return this.submissionsService.getStudentSubmissions(studentId);
   }
 
+  @Get(":submissionId/signature-status")
+  @RequirePermissions(
+    "review_academic",
+    "library_intake",
+    "director_approval",
+    "view_all_submissions",
+    "configure_system",
+  )
+  signatureStatus(@Param("submissionId") submissionId: string) {
+    return this.submissionsService.getSignatureStatus(submissionId);
+  }
+
   @Get(":submissionId/files/:fileId/download")
   @RequirePermissions(
     "submit_thesis",
@@ -225,12 +237,14 @@ export class SubmissionsController {
     @Req() req: { user: JwtPayload },
     @Param("submissionId") submissionId: string,
     @Param("fileId") fileId: string,
+    @Query("style") style: string | undefined,
   ) {
     const { stream, contentType, fileName } =
       await this.submissionsService.getSubmissionFileStream(
         req.user,
         submissionId,
         fileId,
+        style,
       );
     const encoded = encodeURIComponent(fileName);
     return new StreamableFile(stream, {

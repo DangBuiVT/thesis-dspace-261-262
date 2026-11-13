@@ -16,7 +16,12 @@ export function useAdminLifecycle({
       void loadFormFields();
       return;
     }
-    if (emailOnly || activeTab === "settings" || activeTab === "email") {
+    if (
+      emailOnly ||
+      activeTab === "settings" ||
+      activeTab === "email" ||
+      activeTab === "signature"
+    ) {
       void loadSettings();
       return;
     }

@@ -31,7 +31,8 @@ export default function SettingsPanel() {
         <Button
           type="primary"
           htmlType="submit"
-          loading={savingSettings || loadingSettings}
+          loading={savingSettings}
+          disabled={loadingSettings}
         >
           {t("Save configuration")}
         </Button>
