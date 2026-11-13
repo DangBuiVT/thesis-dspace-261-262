@@ -11,6 +11,12 @@ import {
   SubmissionsDashboard,
 } from "../features/submissions";
 import PortalShell from "./PortalShell";
+import { isVerifyPath } from "../features/verify/index.js";
+const SignatureVerifyPage = lazy(() =>
+  import("../features/verify/index.js").then((module) => ({
+    default: module.SignatureVerifyPage,
+  })),
+);
 const AdministrationPanel = lazy(() =>
   import("../features/admin/index.jsx").then((module) => ({
     default: module.AdministrationPanel,
@@ -28,6 +34,14 @@ const ArchiveWorkspace = lazy(() =>
 );
 function PortalContent() {
   const { auth } = useSession();
+  // Trang kiểm tra chữ ký là công khai: không cần đăng nhập.
+  if (isVerifyPath(window.location.pathname)) {
+    return (
+      <Suspense fallback={<Spin />}>
+        <SignatureVerifyPage />
+      </Suspense>
+    );
+  }
   if (!auth) return <LoginPanel />;
   return (
     <SubmissionProvider

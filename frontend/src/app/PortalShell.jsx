@@ -1,4 +1,6 @@
 import { Layout, Typography, Space, Button } from "antd";
+import { SafetyCertificateOutlined } from "@ant-design/icons";
+import { VERIFY_PATH } from "../features/verify/index.js";
 import { useSession } from "../features/auth";
 import { LanguageSwitch, useI18n } from "../i18n/I18nProvider";
 const { Header, Content } = Layout;
@@ -42,6 +44,13 @@ export default function PortalShell({ children }) {
           </Space>
         </a>
         <Space size={12} align="center" wrap>
+          <Button
+            ghost
+            icon={<SafetyCertificateOutlined />}
+            href={VERIFY_PATH}
+          >
+            {t("Verify signature")}
+          </Button>
           <LanguageSwitch />
           {auth?.user ? (
             <Space size={12} align="center" wrap>

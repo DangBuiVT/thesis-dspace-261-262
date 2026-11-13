@@ -17,8 +17,9 @@ const OID = {
 
 /** Dung lượng dành cho CMS trong /Contents (bytes). */
 const CMS_CAPACITY = 16384;
-const BR_PLACEHOLDER = "9999999999";
-const BR_PATTERN = /\/ByteRange\s*\[\s*\d+\s+\d+\s+\d+\s+\d+\s*\]/;
+const SIGN_LOCATION = process.env.SIGN_LOCATION || "Thư viện Trường Đại học Bách Khoa - ĐHQG-HCM, TP. Hồ Chí Minh";
+// Chỉ khớp ByteRange placeholder của chữ ký đang tạo, không đụng tới chữ ký có sẵn trong file.
+const BR_PATTERN = /\/ByteRange\s*\[\s*0\s+9999999999\s+9999999999\s+9999999999\s*\]/;
 
 export interface PadesSignResult {
   /** PDF đã ký (các byte cuối cùng sẽ được lưu). */
@@ -59,7 +60,7 @@ export class PadesSigner {
     private readonly tsa: TsaClient
   ) {}
 
-  async signPdf(pdfBytes: Uint8Array, opts: { signerName: string; reason: string }): Promise<PadesSignResult> {
+  async signPdf(pdfBytes: Uint8Array, opts: { signerName: string; reason: string; location?: string }): Promise<PadesSignResult> {
     const identity = await this.pki.identity();
     const signedAt = new Date();
 
@@ -197,7 +198,7 @@ export class PadesSigner {
   /** Thêm signature dictionary + trường ẩn với placeholder cố định kích thước. */
   private async addSignatureField(
     pdfBytes: Uint8Array,
-    opts: { signerName: string; reason: string },
+    opts: { signerName: string; reason: string; location?: string },
     signedAt: Date
   ): Promise<Buffer> {
     const doc = await PDFDocument.load(pdfBytes);
@@ -212,8 +213,13 @@ export class PadesSigner {
     sigDict.set(PDFName.of("ByteRange"), br);
     sigDict.set(PDFName.of("Contents"), PDFHexString.of("0".repeat(CMS_CAPACITY * 2)));
     sigDict.set(PDFName.of("M"), PDFString.fromDate(signedAt));
-    sigDict.set(PDFName.of("Reason"), PDFString.of(opts.reason));
-    sigDict.set(PDFName.of("Name"), PDFString.of(opts.signerName));
+    // Chuỗi văn bản PDF dùng UTF-16BE (fromText) để giữ đúng tiếng Việt.
+    sigDict.set(PDFName.of("Reason"), PDFHexString.fromText(opts.reason));
+    sigDict.set(PDFName.of("Name"), PDFHexString.fromText(opts.signerName));
+    sigDict.set(PDFName.of("Location"), PDFHexString.fromText(opts.location ?? SIGN_LOCATION));
+    if (process.env.SIGN_CONTACT_INFO) {
+      sigDict.set(PDFName.of("ContactInfo"), PDFHexString.fromText(process.env.SIGN_CONTACT_INFO));
+    }
     const sigRef = ctx.register(sigDict);
 
     const page = doc.getPage(0);
@@ -221,7 +227,7 @@ export class PadesSigner {
     fieldDict.set(PDFName.of("Type"), PDFName.of("Annot"));
     fieldDict.set(PDFName.of("Subtype"), PDFName.of("Widget"));
     fieldDict.set(PDFName.of("FT"), PDFName.of("Sig"));
-    fieldDict.set(PDFName.of("T"), PDFString.of("BKlibSignature1"));
+    fieldDict.set(PDFName.of("T"), PDFString.of(nextFieldName(doc)));
     fieldDict.set(PDFName.of("V"), sigRef);
     const rect = PDFArray.withContext(ctx);
     for (const n of [0, 0, 0, 0]) rect.push(PDFNumber.of(n));
@@ -315,6 +321,20 @@ export class PadesSigner {
       signatureValue: sigView.slice().buffer as ArrayBuffer,
     };
   }
+}
+
+/** Tên trường chữ ký chưa dùng: BKlibSignature1, BKlibSignature2, ... */
+function nextFieldName(doc: PDFDocument): string {
+  const used = new Set<string>();
+  for (const [, obj] of doc.context.enumerateIndirectObjects()) {
+    if (obj instanceof PDFDict) {
+      const t = obj.get(PDFName.of("T"));
+      if (t instanceof PDFString || t instanceof PDFHexString) used.add(t.decodeText());
+    }
+  }
+  let i = 1;
+  while (used.has(`BKlibSignature${i}`)) i++;
+  return `BKlibSignature${i}`;
 }
 
 /** Đọc một khóa tùy chọn (có thể là tham chiếu gián tiếp) và kiểm tra kiểu. */
