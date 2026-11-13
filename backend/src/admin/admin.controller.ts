@@ -10,14 +10,18 @@ import {
   Patch,
   Post,
   Put,
+  Query,
   Req,
+  Res,
   StreamableFile,
   UploadedFile,
+  UploadedFiles,
   UseGuards,
   UseInterceptors
 } from "@nestjs/common";
-import { FileInterceptor } from "@nestjs/platform-express";
+import { FileFieldsInterceptor, FileInterceptor } from "@nestjs/platform-express";
 import { memoryStorage } from "multer";
+import type { Response } from "express";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import { RequirePermissions } from "../auth/permissions.decorator";
@@ -29,10 +33,12 @@ import { USER_ROLES } from "../users/user-role";
 import { AdminRolesService } from "./admin-roles.service";
 import { AdminSettingsService } from "./admin-settings.service";
 import { AdminUsersService } from "./admin-users.service";
+import { MAX_LOGO_BYTES, WatermarkAssetsService } from "./watermark-assets.service";
 import { ConfirmImportUsersDto } from "./dto/confirm-import-users.dto";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { UpdateRolePermissionsDto } from "./dto/update-role-permissions.dto";
 import { UpdateSettingsDto } from "./dto/update-settings.dto";
+import { WatermarkPreviewDto } from "./dto/watermark-preview.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
 import { CreateGroupDto, SetGroupGrantsDto, SetGroupMembersDto } from "../workflow/dto/group.dto";
 import { SaveWorkflowDto } from "../workflow/dto/save-workflow.dto";
@@ -49,7 +55,8 @@ export class AdminController {
     private readonly adminSettingsService: AdminSettingsService,
     private readonly formFieldsService: SubmissionFormFieldsService,
     private readonly workflowService: WorkflowService,
-    private readonly groupsService: GroupsService
+    private readonly groupsService: GroupsService,
+    private readonly watermarkAssets: WatermarkAssetsService
   ) {}
 
   @Get("users")
@@ -150,6 +157,47 @@ export class AdminController {
   @RequirePermissions("configure_system")
   updateSettings(@Body() body: UpdateSettingsDto) {
     return this.adminSettingsService.update(body.settings);
+  }
+
+  @Get("signature/logo")
+  @RequirePermissions("configure_system")
+  async getWatermarkLogo(@Query("variant") variant: string, @Res({ passthrough: true }) res: Response) {
+    const logo = await this.watermarkAssets.readLogo(variant === "gray" ? "gray" : "color");
+    res.set({
+      "Content-Type": "image/png",
+      "Cache-Control": "no-store",
+      "X-Watermark-Logo": logo.custom ? "custom" : "default"
+    });
+    return new StreamableFile(logo.bytes);
+  }
+
+  @Post("signature/logo")
+  @RequirePermissions("configure_system")
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      [
+        { name: "logo", maxCount: 1 },
+        { name: "grayLogo", maxCount: 1 }
+      ],
+      { storage: memoryStorage(), limits: { fileSize: MAX_LOGO_BYTES } }
+    )
+  )
+  uploadWatermarkLogo(@UploadedFiles() files?: { logo?: Array<{ buffer: Buffer }>; grayLogo?: Array<{ buffer: Buffer }> }) {
+    return this.watermarkAssets.saveLogo(files?.logo?.[0]?.buffer, files?.grayLogo?.[0]?.buffer);
+  }
+
+  @Delete("signature/logo")
+  @RequirePermissions("configure_system")
+  resetWatermarkLogo() {
+    return this.watermarkAssets.resetLogo();
+  }
+
+  @Post("signature/preview")
+  @RequirePermissions("configure_system")
+  @Header("Content-Type", "application/pdf")
+  @Header("Cache-Control", "no-store")
+  async previewWatermark(@Body() body: WatermarkPreviewDto) {
+    return new StreamableFile(Buffer.from(await this.watermarkAssets.preview(body)));
   }
 
   @Get("submission-form-fields")

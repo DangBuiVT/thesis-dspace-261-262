@@ -26,7 +26,8 @@ export async function ensurePortalSchema(db: Pool) {
   await db.query(`
     INSERT INTO system_settings (key, value, description) VALUES
       ('signature_style', 'margin_strips', 'Default visible signature style on archived PDFs: margin_strips, diagonal or invisible'),
-      ('signature_watermark_pages', '10', 'Pages that receive the HCMUT logo watermark, e.g. 10 or 10,15 or 10-12')
+      ('signature_watermark_pages', '10', 'Pages that receive the HCMUT logo watermark, e.g. 10 or 10,15 or 10-12'),
+      ('signature_watermark_text', 'TRƯỜNG ĐẠI HỌC BÁCH KHOA - HCMUT', 'Wording printed next to the logo in the margin strips and on the diagonal ribbon')
     ON CONFLICT (key) DO NOTHING
   `);
   await db.query(`

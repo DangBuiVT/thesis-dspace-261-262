@@ -1,9 +1,11 @@
 import { Injectable } from "@nestjs/common";
-import { PDFDocument, PDFFont, rgb, degrees, StandardFonts } from "pdf-lib";
+import { PDFDocument, PDFFont, PDFImage, rgb, degrees, StandardFonts } from "pdf-lib";
 import * as fontkit from "@pdf-lib/fontkit";
+import type { Pool } from "pg";
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import * as path from "node:path";
+import { createPgPool } from "../users/db-pool";
 
 export type SignatureStyleType = "margin_strips" | "diagonal" | "invisible";
 
@@ -14,13 +16,45 @@ export interface StampingResult {
   watermarkPagesMissing: number[];
 }
 
+export interface StampingMetadata {
+  serial?: string;
+  signedAt?: string;
+  watermarkPages?: string | number[];
+  enableLogoWatermark?: boolean;
+  /** Chữ watermark; bỏ trống thì đọc system_settings.signature_watermark_text, rồi tới mặc định. */
+  watermarkText?: string;
+}
+
+/** Chữ watermark mặc định (dải 2 bên lề và dải chéo) — cần font Unicode (DejaVuSans-Bold.ttf). */
+export const DEFAULT_WATERMARK_TEXT = "TRƯỜNG ĐẠI HỌC BÁCH KHOA - HCMUT";
+export const WATERMARK_TEXT_MAX_LENGTH = 120;
+
+/** Logo do quản trị viên tải lên (bản màu cho logo giữa trang, bản xám cho dải lề). */
+export const CUSTOM_LOGO_FILE = "watermark-logo.png";
+export const CUSTOM_GRAY_LOGO_FILE = "watermark-logo-gray.png";
+export function customAssetsDir(): string {
+  return path.resolve(process.cwd(), "uploads", "assets");
+}
+
+// Một pool dùng chung cho mọi bản PdfStampingService (service được khai báo ở nhiều module).
+let sharedPool: Pool | null = null;
+function settingsPool(): Pool {
+  if (!sharedPool) sharedPool = createPgPool();
+  return sharedPool;
+}
+
+/** Bỏ dấu tiếng Việt khi phải dùng Helvetica (không có glyph có dấu). */
+function toAscii(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .replace(/[^\x20-\x7e]/g, "");
+}
+
 @Injectable()
 export class PdfStampingService {
-  private readonly institutionText = "DAI HOC BACH KHOA THANH PHO HO CHI MINH - HCMUT";
-  /** Chữ trên dải 2 bên lề (đi kèm logo xám) — cần font Unicode (DejaVuSans-Bold.ttf). */
-  private readonly marginStripText = "TRƯỜNG ĐẠI HỌC BÁCH KHOA - HCMUT";
-  /** Dùng khi không tìm thấy font Unicode (Helvetica không có dấu tiếng Việt). */
-  private readonly marginStripTextAscii = "TRUONG DAI HOC BACH KHOA - HCMUT";
   /** Màu xám dùng chung cho chữ và logo ở dải 2 bên lề. */
   private readonly marginGray = rgb(0.35, 0.35, 0.35);
   private readonly marginOpacity = 0.22;
@@ -44,6 +78,29 @@ export class PdfStampingService {
       }
     }
     return null;
+  }
+
+  /** Logo tải lên được ưu tiên; không có thì dùng logo HCMUT mặc định. */
+  resolveWatermarkLogo(variant: "color" | "gray"): { path: string | null; custom: boolean } {
+    const customPath = path.join(customAssetsDir(), variant === "gray" ? CUSTOM_GRAY_LOGO_FILE : CUSTOM_LOGO_FILE);
+    if (existsSync(customPath)) return { path: customPath, custom: true };
+    return { path: this.resolveLogoPath(variant === "gray" ? "hcmut_gray.png" : "hcmut_nobg.png"), custom: false };
+  }
+
+  /** Chữ watermark: tham số truyền vào → system_settings → mặc định. */
+  async resolveWatermarkText(override?: string): Promise<string> {
+    const direct = String(override ?? "").trim();
+    if (direct) return direct.slice(0, WATERMARK_TEXT_MAX_LENGTH);
+    try {
+      const result = await settingsPool().query<{ value: string }>(
+        `SELECT value FROM system_settings WHERE key = 'signature_watermark_text' LIMIT 1`
+      );
+      const stored = String(result.rows[0]?.value ?? "").trim();
+      if (stored) return stored.slice(0, WATERMARK_TEXT_MAX_LENGTH);
+    } catch (e) {
+      console.error("Failed to read signature_watermark_text, using default:", e);
+    }
+    return DEFAULT_WATERMARK_TEXT;
   }
 
   /**
@@ -86,12 +143,7 @@ export class PdfStampingService {
   async stampPdfFile(
     filePath: string,
     style: SignatureStyleType = "margin_strips",
-    metadata?: { 
-      serial?: string; 
-      signedAt?: string;
-      watermarkPages?: string | number[];
-      enableLogoWatermark?: boolean;
-    }
+    metadata?: StampingMetadata
   ): Promise<Uint8Array> {
     const result = await this.stampPdfFileDetailed(filePath, style, metadata);
     return result.pdfBytes;
@@ -103,14 +155,16 @@ export class PdfStampingService {
   async stampPdfFileDetailed(
     filePath: string,
     style: SignatureStyleType = "margin_strips",
-    metadata?: { 
-      serial?: string; 
-      signedAt?: string;
-      watermarkPages?: string | number[];
-      enableLogoWatermark?: boolean;
-    }
+    metadata?: StampingMetadata
   ): Promise<StampingResult> {
-    const existingPdfBytes = await readFile(filePath);
+    return this.stampPdfBytesDetailed(await readFile(filePath), style, metadata);
+  }
+
+  async stampPdfBytesDetailed(
+    existingPdfBytes: Uint8Array,
+    style: SignatureStyleType = "margin_strips",
+    metadata?: StampingMetadata
+  ): Promise<StampingResult> {
     const pdfDoc = await PDFDocument.load(existingPdfBytes);
     const pages = pdfDoc.getPages();
     const totalPages = pages.length;
@@ -119,23 +173,26 @@ export class PdfStampingService {
     if (style !== "invisible") {
       const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
       const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
+      const watermarkText = await this.resolveWatermarkText(metadata?.watermarkText);
 
-      // Logo xám + font tiếng Việt cho dải 2 bên lề (nhúng 1 lần, dùng lại cho mọi trang)
-      let grayLogo: Awaited<ReturnType<PDFDocument["embedPng"]>> | null = null;
-      let stripFont: PDFFont = helveticaBold;
-      let stripText = this.marginStripTextAscii;
-      if (style === "margin_strips") {
-        const fontPath = this.resolveLogoPath("DejaVuSans-Bold.ttf");
-        if (fontPath) {
-          try {
-            pdfDoc.registerFontkit(fontkit);
-            stripFont = await pdfDoc.embedFont(await readFile(fontPath), { subset: true });
-            stripText = this.marginStripText;
-          } catch (e) {
-            console.error("Failed to embed Unicode font for margin strips:", e);
-          }
+      // Font tiếng Việt cho chữ watermark (nhúng 1 lần, dùng lại cho mọi trang)
+      let textFont: PDFFont = helveticaBold;
+      let text = toAscii(watermarkText) || toAscii(DEFAULT_WATERMARK_TEXT);
+      const fontPath = this.resolveLogoPath("DejaVuSans-Bold.ttf");
+      if (fontPath) {
+        try {
+          pdfDoc.registerFontkit(fontkit);
+          textFont = await pdfDoc.embedFont(await readFile(fontPath), { subset: true });
+          text = watermarkText;
+        } catch (e) {
+          console.error("Failed to embed Unicode font for watermark text:", e);
         }
-        const grayLogoPath = this.resolveLogoPath("hcmut_gray.png");
+      }
+
+      // Logo xám cho dải 2 bên lề
+      let grayLogo: PDFImage | null = null;
+      if (style === "margin_strips") {
+        const grayLogoPath = this.resolveWatermarkLogo("gray").path;
         if (grayLogoPath) {
           try {
             grayLogo = await pdfDoc.embedPng(await readFile(grayLogoPath));
@@ -147,13 +204,17 @@ export class PdfStampingService {
 
       for (const page of pages) {
         const { width, height } = page.getSize();
-        const text1 = this.institutionText;
 
         if (style === "margin_strips") {
-          // Dải lề: [logo xám] + "Truong Dai hoc Bach Khoa - HCMUT", cùng màu xám & độ mờ
-          const fontSize = 15;
-          const textWidth = stripFont.widthOfTextAtSize(stripText, fontSize);
+          // Dải lề: [logo xám] + chữ watermark, cùng màu xám & độ mờ
           const marginOffset = 30; // khoảng cách đường baseline tới mép trang
+          // Thu nhỏ chữ nếu cả cụm dài hơn 90% chiều cao trang
+          const measure = (size: number) =>
+            (grayLogo ? size * 1.6 + size * 0.5 : 0) + textFont.widthOfTextAtSize(text, size);
+          let fontSize = 15;
+          const maxLength = height * 0.9;
+          if (measure(fontSize) > maxLength) fontSize = Math.max(6, (fontSize * maxLength) / measure(fontSize));
+          const textWidth = textFont.widthOfTextAtSize(text, fontSize);
           const capHeight = fontSize * 0.72;
           const logoSize = fontSize * 1.6; // cạnh dọc theo dải
           const logoThick = grayLogo ? (grayLogo.height / grayLogo.width) * logoSize : 0; // cạnh vuông góc dải
@@ -174,11 +235,11 @@ export class PdfStampingService {
               rotate: degrees(90),
             });
           }
-          page.drawText(stripText, {
+          page.drawText(text, {
             x: marginOffset,
             y: leftStart + (grayLogo ? logoSize + gap : 0),
             size: fontSize,
-            font: stripFont,
+            font: textFont,
             color: this.marginGray,
             opacity: this.marginOpacity,
             rotate: degrees(90),
@@ -199,17 +260,17 @@ export class PdfStampingService {
               rotate: degrees(-90),
             });
           }
-          page.drawText(stripText, {
+          page.drawText(text, {
             x: rightBaseX,
             y: rightStart - (grayLogo ? logoSize + gap : 0),
             size: fontSize,
-            font: stripFont,
+            font: textFont,
             color: this.marginGray,
             opacity: this.marginOpacity,
             rotate: degrees(-90),
           });
         } else if (style === "diagonal") {
-          // Căn giữa tuyệt đối cả 2 dòng theo góc nghiêng 45 độ tại tâm trang giấy 
+          // Căn giữa tuyệt đối cả 2 dòng theo góc nghiêng 45 độ tại tâm trang giấy
           const angle = 45;
           const rad = (angle * Math.PI) / 180;
           const cos = Math.cos(rad);
@@ -217,10 +278,14 @@ export class PdfStampingService {
 
           const text2 = metadata?.serial ? `CERT SERIAL: ${metadata.serial}` : "";
 
-          const fontSize1 = Math.min(width, height) * 0.034;
+          // Chữ dài thì thu nhỏ để không vượt quá 85% đường chéo trang
+          let fontSize1 = Math.min(width, height) * 0.034;
+          const maxDiagonal = Math.hypot(width, height) * 0.85;
+          const naturalWidth = textFont.widthOfTextAtSize(text, fontSize1);
+          if (naturalWidth > maxDiagonal) fontSize1 = Math.max(6, (fontSize1 * maxDiagonal) / naturalWidth);
           const fontSize2 = fontSize1 * 0.62;
 
-          const w1 = helveticaBold.widthOfTextAtSize(text1, fontSize1);
+          const w1 = textFont.widthOfTextAtSize(text, fontSize1);
           const w2 = text2 ? helvetica.widthOfTextAtSize(text2, fontSize2) : 0;
 
           const lineGap = fontSize1 * 0.55;
@@ -230,11 +295,11 @@ export class PdfStampingService {
           const baselineV1 = v1 - fontSize1 * 0.35;
           const x1 = width / 2 - (w1 / 2) * cos + baselineV1 * sin;
           const y1 = height / 2 - (w1 / 2) * sin - baselineV1 * cos;
-          page.drawText(text1, {
+          page.drawText(text, {
             x: x1,
             y: y1,
             size: fontSize1,
-            font: helveticaBold,
+            font: textFont,
             color: rgb(0, 0.2, 0.4),
             opacity: 0.12,
             rotate: degrees(angle),
@@ -258,7 +323,7 @@ export class PdfStampingService {
       }
     }
 
-    // 2. CHÈN WATERMARK LOGO HCMUT_NOBG.PNG MỜ 0.22 OPACITY BÍ MẬT Ở CÁC TRANG CHỈ ĐỊNH
+    // 2. CHÈN WATERMARK LOGO MỜ 0.22 OPACITY Ở GIỮA CÁC TRANG CHỈ ĐỊNH
     const watermarkPagesApplied: number[] = [];
     const watermarkPagesMissing: number[] = [];
 
@@ -266,7 +331,7 @@ export class PdfStampingService {
     const requestedTargetPages = this.parsePageNumbers(metadata?.watermarkPages);
 
     if (isLogoEnabled && requestedTargetPages.length > 0) {
-      const logoPath = this.resolveLogoPath();
+      const logoPath = this.resolveWatermarkLogo("color").path;
       if (logoPath) {
         try {
           const logoBytes = await readFile(logoPath);
@@ -278,9 +343,14 @@ export class PdfStampingService {
               const targetPage = pages[targetPageNum - 1];
               const { width, height } = targetPage.getSize();
 
-              // Kích thước logo watermark cân đối ở trung tâm trang (chiều rộng khoảng 35% chiều rộng trang)
-              const imgWidth = Math.min(width * 0.45, 260);
-              const imgHeight = (logoImage.height / logoImage.width) * imgWidth;
+              // Logo cân đối ở trung tâm trang; logo cao/hẹp thì giới hạn theo chiều cao
+              let imgWidth = Math.min(width * 0.45, 260);
+              let imgHeight = (logoImage.height / logoImage.width) * imgWidth;
+              const maxHeight = Math.min(height * 0.45, 260);
+              if (imgHeight > maxHeight) {
+                imgWidth = (imgWidth * maxHeight) / imgHeight;
+                imgHeight = maxHeight;
+              }
 
               targetPage.drawImage(logoImage, {
                 x: width / 2 - imgWidth / 2,
@@ -307,5 +377,53 @@ export class PdfStampingService {
       watermarkPagesApplied,
       watermarkPagesMissing,
     };
+  }
+
+  /**
+   * PDF xem trước: trang 1 (chỉ kiểu chữ ký) và trang logo đầu tiên được cấu hình.
+   * Dùng nội dung giả lập văn bản để thấy watermark nằm trên trang thật trông ra sao.
+   */
+  async buildPreviewPdf(
+    style: SignatureStyleType,
+    options: { watermarkText?: string; watermarkPages?: string }
+  ): Promise<Uint8Array> {
+    const logoPages = this.parsePageNumbers(options.watermarkPages);
+    const logoPage = logoPages.length > 0 ? Math.min(logoPages[0], 500) : 0;
+    const pageCount = Math.max(1, logoPage);
+
+    const sample = await PDFDocument.create();
+    const font = await sample.embedFont(StandardFonts.Helvetica);
+    const bold = await sample.embedFont(StandardFonts.HelveticaBold);
+    const keep = new Set([1, logoPage].filter((n) => n > 0));
+    for (let n = 1; n <= pageCount; n++) {
+      const page = sample.addPage([595.28, 841.89]); // A4
+      if (!keep.has(n)) continue; // các trang ở giữa bị bỏ đi sau khi đóng dấu
+      const { width, height } = page.getSize();
+      const label = n === logoPage ? `Page ${n} - logo watermark page` : `Page ${n}`;
+      page.drawText("Watermark preview", { x: 72, y: height - 90, size: 18, font: bold, color: rgb(0.15, 0.15, 0.15) });
+      page.drawText(label, { x: 72, y: height - 112, size: 11, font, color: rgb(0.4, 0.4, 0.4) });
+      // Các dòng xám mô phỏng đoạn văn
+      let y = height - 150;
+      while (y > 90) {
+        for (let line = 0; line < 6 && y > 90; line++, y -= 16) {
+          const lineWidth = line === 5 ? (width - 144) * 0.55 : width - 144;
+          page.drawRectangle({ x: 72, y, width: lineWidth, height: 6, color: rgb(0.86, 0.86, 0.86) });
+        }
+        y -= 18;
+      }
+      page.drawText(String(n), { x: width / 2 - 4, y: 40, size: 10, font, color: rgb(0.5, 0.5, 0.5) });
+    }
+
+    const stamped = await this.stampPdfBytesDetailed(await sample.save(), style, {
+      watermarkText: options.watermarkText,
+      watermarkPages: logoPage > 0 ? [logoPage] : [],
+    });
+
+    const stampedDoc = await PDFDocument.load(stamped.pdfBytes);
+    const output = await PDFDocument.create();
+    const indices = Array.from(keep).sort((a, b) => a - b).map((n) => n - 1);
+    const copied = await output.copyPages(stampedDoc, indices);
+    copied.forEach((page) => output.addPage(page));
+    return output.save();
   }
 }

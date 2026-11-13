@@ -39,6 +39,12 @@ export class AdminSettingsService {
         if (key === "login_method" && nextValue !== "username" && nextValue !== "google") {
           throw new BadRequestException("login_method must be username or google");
         }
+        if (key === "signature_watermark_text") {
+          nextValue = nextValue.trim();
+          if (nextValue.length > 120) {
+            throw new BadRequestException("Watermark text must be at most 120 characters");
+          }
+        }
         if (SENSITIVE_SETTING_KEYS.has(key) && (nextValue === MASK || nextValue === "")) {
           // Keep existing secret when UI sends mask or blank.
           continue;
