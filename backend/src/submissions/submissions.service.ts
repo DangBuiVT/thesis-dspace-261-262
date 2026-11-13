@@ -2192,7 +2192,9 @@ export class SubmissionsService {
           return {
             stream: stampedStream,
             contentType,
-            fileName: isSigned ? `[SIGNED]_${row.file_name}` : row.file_name,
+            // Không có bản ký PAdES thật (bản xem trước hoặc bài lưu chiểu từ trước khi có ký số):
+            // chỉ là PDF đã đóng dấu hình ảnh, nên không gắn nhãn [SIGNED].
+            fileName: row.file_name,
           };
         } catch (e) {
           // fallback
