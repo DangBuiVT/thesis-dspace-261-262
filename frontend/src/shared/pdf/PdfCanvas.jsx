@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Alert, Button, Space, Spin } from "antd";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?worker&url";
-import { useI18n } from "../../../i18n/I18nProvider";
+import { useI18n } from "../../i18n/I18nProvider";
 
 GlobalWorkerOptions.workerSrc = workerUrl;
 

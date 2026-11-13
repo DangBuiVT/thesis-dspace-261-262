@@ -1,1 +1,1 @@
-export { default } from "../features/submissions/workflow/PdfCanvas.jsx";
+export { default } from "../shared/pdf/PdfCanvas.jsx";

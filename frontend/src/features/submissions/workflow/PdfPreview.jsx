@@ -3,7 +3,7 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { Alert, Button, Empty, Select, Space, Spin } from "antd";
 import { useI18n } from "../../../i18n/I18nProvider";
 
-const PdfCanvas = lazy(() => import("./PdfCanvas"));
+const PdfCanvas = lazy(() => import("../../../shared/pdf/PdfCanvas"));
 
 export default function PdfPreview({ submissionId, files = [], token }) {
   const { t } = useI18n();

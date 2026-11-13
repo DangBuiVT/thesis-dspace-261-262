@@ -32,7 +32,7 @@ import {
   signatureStyleLabel,
 } from "../../../shared/signature.js";
 
-const PdfCanvas = lazy(() => import("../../submissions/workflow/PdfCanvas"));
+const PdfCanvas = lazy(() => import("../../../shared/pdf/PdfCanvas"));
 
 const { Paragraph, Text } = Typography;
 

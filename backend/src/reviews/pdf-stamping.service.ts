@@ -33,7 +33,8 @@ export const WATERMARK_TEXT_MAX_LENGTH = 120;
 export const CUSTOM_LOGO_FILE = "watermark-logo.png";
 export const CUSTOM_GRAY_LOGO_FILE = "watermark-logo-gray.png";
 export function customAssetsDir(): string {
-  return path.resolve(process.cwd(), "uploads", "assets");
+  // WATERMARK_ASSETS_DIR cho phép test dùng thư mục riêng, không đụng logo thật
+  return path.resolve(process.env.WATERMARK_ASSETS_DIR || path.join(process.cwd(), "uploads", "assets"));
 }
 
 // Một pool dùng chung cho mọi bản PdfStampingService (service được khai báo ở nhiều module).
