@@ -104,6 +104,23 @@ export class ArchiveSigningService {
     };
   }
 
+  /** Kiểu chữ ký mặc định do Admin cấu hình (system_settings.signature_style). */
+  async defaultSignatureStyle(): Promise<SignatureStyleType> {
+    const res = await this.db.query<{ value: string }>(
+      `SELECT value FROM system_settings WHERE key = 'signature_style' LIMIT 1`
+    );
+    const value = res.rows[0]?.value;
+    return value === "diagonal" || value === "invisible" ? value : "margin_strips";
+  }
+
+  /** Số trang watermark mặc định (system_settings.signature_watermark_pages). */
+  async defaultWatermarkPages(): Promise<string> {
+    const res = await this.db.query<{ value: string }>(
+      `SELECT value FROM system_settings WHERE key = 'signature_watermark_pages' LIMIT 1`
+    );
+    return res.rows[0]?.value?.trim() || "10";
+  }
+
   /** Đường dẫn file đã ký mới nhất cho một file gốc, hoặc null. */
   async latestSignedPath(submissionId: string, sourceFileId: string): Promise<{ filePath: string; fileName: string } | null> {
     const res = await this.db.query<{ file_path: string; file_name: string }>(

@@ -3,7 +3,10 @@ import { validateThesisPdf, thesisFileListFromRecord } from "../model/files.js";
 import {
   defaultArchiveMetadata,
   DEFAULT_PUBLISHER,
+  OTHER_FACULTY_VALUE,
+  WORKFLOW_STEP_FIELDS,
 } from "../model/formConfig.js";
+import { getStoredSignatureStyle } from "../../../shared/signature.js";
 import { isSubmissionSubmitter } from "../model/access.js";
 import { message } from "antd";
 
@@ -225,8 +228,34 @@ export function useSubmissionSelection({
     formData.append("metadata", JSON.stringify(metadata));
     formData.append("authorIds", JSON.stringify(authorIds));
     formData.append("reviewerIds", JSON.stringify(reviewerIds));
-    if (values.submissionPeriodId) {
+    const adminOtherFaculty =
+      auth.user.role === "admin" &&
+      values.archiveFacultyId === OTHER_FACULTY_VALUE;
+    if (values.submissionPeriodId && !adminOtherFaculty) {
       formData.append("submissionPeriodId", values.submissionPeriodId);
+    }
+    if (auth.user.role === "admin") {
+      // Admin overrides: faculty of this submission and the review steps that stay enabled.
+      if (adminOtherFaculty) {
+        formData.append(
+          "facultyOtherName",
+          String(values.facultyOtherName || "").trim(),
+        );
+      } else if (values.archiveFacultyId) {
+        formData.append("facultyId", values.archiveFacultyId);
+      }
+      formData.append(
+        "workflowRoles",
+        JSON.stringify(
+          WORKFLOW_STEP_FIELDS.filter(
+            (step) => values[step.name] !== false,
+          ).map((step) => step.role),
+        ),
+      );
+      const signatureStyle = getStoredSignatureStyle(null);
+      if (signatureStyle) {
+        formData.append("signatureStyle", signatureStyle);
+      }
     }
     const thesisFile = values.thesisFile?.[0]?.originFileObj;
     if (thesisFile) {

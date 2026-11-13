@@ -12,12 +12,24 @@ export function useSubmissionFilters({
   staffSubmissions,
   libraryQueue,
   directorQueue,
+  adminIntakeQueue,
   staffSearch,
   staffSemesterFilter,
   staffPeriodFilter,
   t,
   lang,
 }) {
+  const adminIntakeFilteredQueue = useMemo(
+    () =>
+      filterBySearchAndArchive(
+        adminIntakeQueue,
+        staffSearch,
+        staffSemesterFilter,
+        staffPeriodFilter,
+      ),
+    [adminIntakeQueue, staffSearch, staffSemesterFilter, staffPeriodFilter],
+  );
+
   const reviewerFiltered = useMemo(
     () =>
       filterBySearchAndArchive(
@@ -132,6 +144,7 @@ export function useSubmissionFilters({
   );
   return {
     reviewerFiltered,
+    adminIntakeFilteredQueue,
     staffFilterSource,
     staffFilteredSubmissions,
     exportAllSubmissions,

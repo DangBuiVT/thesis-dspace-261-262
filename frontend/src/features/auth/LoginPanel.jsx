@@ -1,8 +1,20 @@
 import { useI18n } from "../../i18n/I18nProvider";
 import { Card, Space, Alert, Button, Form, Input } from "antd";
 import { useSession } from "./SessionContext";
+import RegisterDialog from "./RegisterDialog";
+
+// Local demo accounts seeded by db/init/001_schema.sql (password login only).
+const DEMO_ACCOUNTS = [
+  { label: "Student", username: "student1", password: "student123" },
+  { label: "Reviewer", username: "reviewer1", password: "review123" },
+  { label: "Library staff", username: "library1", password: "library123" },
+  { label: "Director", username: "director1", password: "director123" },
+  { label: "Admin", username: "admin1", password: "admin123" },
+];
+
 export default function LoginPanel() {
-  const { loginMethod, isLoggingIn, loginForm, handleLogin } = useSession();
+  const { loginMethod, isLoggingIn, loginForm, handleLogin, openRegister } =
+    useSession();
   const { t } = useI18n();
   return (
     <Card
@@ -42,9 +54,24 @@ export default function LoginPanel() {
               type="info"
               showIcon
               message={t("Demo credentials")}
-              description={t(
-                "student1/student123, reviewer1/review123, library1/library123, director1/director123, admin1/admin123",
-              )}
+              description={
+                <Space wrap size={[6, 6]} style={{ marginTop: 6 }}>
+                  {DEMO_ACCOUNTS.map((account) => (
+                    <Button
+                      key={account.username}
+                      size="small"
+                      onClick={() =>
+                        loginForm.setFieldsValue({
+                          username: account.username,
+                          password: account.password,
+                        })
+                      }
+                    >
+                      {t(account.label)} ({account.username})
+                    </Button>
+                  ))}
+                </Space>
+              }
             />
             <Form
               form={loginForm}
@@ -74,10 +101,16 @@ export default function LoginPanel() {
               >
                 <Input.Password placeholder="******" />
               </Form.Item>
-              <Button type="primary" htmlType="submit" loading={isLoggingIn}>
-                {t("Login")}
-              </Button>
+              <Space style={{ width: "100%", justifyContent: "space-between" }}>
+                <Button type="primary" htmlType="submit" loading={isLoggingIn}>
+                  {t("Login")}
+                </Button>
+                <Button onClick={() => void openRegister()}>
+                  {t("Create student account")}
+                </Button>
+              </Space>
             </Form>
+            <RegisterDialog />
           </>
         )}
       </Space>

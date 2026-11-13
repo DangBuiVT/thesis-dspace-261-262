@@ -2,9 +2,19 @@ import {
   requestReviewDecision,
   requestReviewStageAction,
   requestFinalEditorAction,
+  requestAdminIntakeAction,
+  requestBatchSignLegacy,
 } from "../api.js";
 import { authHeaders, parseResponse } from "../../../shared/api/http.js";
 import { message, Modal } from "antd";
+import { getStoredSignatureStyle } from "../../../shared/signature.js";
+import { hasPermission } from "../model/access.js";
+
+// The visible signature style chosen in this browser; absent means the system default.
+function signatureStyleBody() {
+  const style = getStoredSignatureStyle(null);
+  return style ? { signatureStyle: style } : {};
+}
 
 export function useReviewActions({
   workflowRequests,
@@ -35,6 +45,20 @@ export function useReviewActions({
   setLibraryRejectModalOpen,
   libraryRejectTargetId,
   libraryRejectReason,
+  setAdminIntakeActionLoadingId,
+  loadAdminIntakeQueue,
+  loadLegacyBatchList,
+  setAdminRejectTargetId,
+  setAdminRejectReason,
+  setAdminRejectModalOpen,
+  adminRejectTargetId,
+  adminRejectReason,
+  selectedLegacyKeys,
+  setSelectedLegacyKeys,
+  setBatchSigningLoading,
+  legacyBatchStyle,
+  legacyBatchPages,
+  setBatchResult,
 }) {
   const submitReviewAction = async (submissionId, action, comment) => {
     if (workflowRequests.current.has(submissionId)) return false;
@@ -139,7 +163,11 @@ export function useReviewActions({
           "Content-Type": "application/json",
           ...authHeaders(auth.token),
         },
-        body: JSON.stringify({ submissionId, action: "archive" }),
+        body: JSON.stringify({
+          submissionId,
+          action: "archive",
+          ...signatureStyleBody(),
+        }),
       });
       const payload = await parseResponse(response);
       if (!response.ok) {
@@ -318,6 +346,119 @@ export function useReviewActions({
     setLibraryRejectReason("");
   };
 
+  // Admin intake: act on whatever step a submission is waiting at (approve / archive / reject).
+  const submitAdminIntakeAction = async (submissionId, action, comment) => {
+    if (workflowRequests.current.has(submissionId)) return false;
+    workflowRequests.current.add(submissionId);
+    setAdminIntakeActionLoadingId(submissionId);
+    try {
+      const response = await requestAdminIntakeAction({
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders(auth.token),
+        },
+        body: JSON.stringify({
+          submissionId,
+          action,
+          comment,
+          ...signatureStyleBody(),
+        }),
+      });
+      const payload = await parseResponse(response);
+      if (!response.ok) {
+        throw new Error(payload?.message || "Action failed");
+      }
+      message.success(
+        action === "reject"
+          ? t("Rejected")
+          : action === "archive"
+            ? t("Submission archived")
+            : t("Approved"),
+      );
+      await Promise.all([loadAdminIntakeQueue(), loadStaffSubmissions()]);
+      setStaffDetailRecord(null);
+      return true;
+    } catch (error) {
+      message.error(tr(error.message || "Action failed"));
+      return false;
+    } finally {
+      workflowRequests.current.delete(submissionId);
+      setAdminIntakeActionLoadingId(null);
+    }
+  };
+
+  const openAdminRejectModal = (submissionId) => {
+    setAdminRejectTargetId(submissionId);
+    setAdminRejectReason("");
+    setAdminRejectModalOpen(true);
+  };
+
+  const confirmAdminReject = async () => {
+    if (!adminRejectTargetId) {
+      return;
+    }
+    if (!adminRejectReason.trim()) {
+      message.error(t("Please enter a reject reason"));
+      return;
+    }
+    if (
+      !(await submitAdminIntakeAction(
+        adminRejectTargetId,
+        "reject",
+        adminRejectReason.trim(),
+      ))
+    )
+      return;
+    setAdminRejectModalOpen(false);
+    setAdminRejectTargetId(null);
+    setAdminRejectReason("");
+  };
+
+  // Sign (and archive) a batch of older theses with the chosen style and watermark pages.
+  const handleBatchSignLegacy = async () => {
+    if (selectedLegacyKeys.length === 0) {
+      message.warning(t("Select at least one submission to sign"));
+      return;
+    }
+    setBatchSigningLoading(true);
+    try {
+      const response = await requestBatchSignLegacy({
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders(auth.token),
+        },
+        body: JSON.stringify({
+          submissionIds: selectedLegacyKeys,
+          signatureStyle: legacyBatchStyle,
+          watermarkPages: legacyBatchPages.trim() || "10",
+        }),
+      });
+      const payload = await parseResponse(response);
+      if (!response.ok) {
+        throw new Error(payload?.message || "Batch signing failed");
+      }
+      setBatchResult(payload);
+      message.success(
+        t("Signed {{count}} of {{total}} submissions", {
+          count: payload?.successCount ?? 0,
+          total: payload?.total ?? selectedLegacyKeys.length,
+        }),
+      );
+      setSelectedLegacyKeys([]);
+      void loadLegacyBatchList();
+      void loadAdminIntakeQueue();
+      if (hasPermission(auth.user, "view_all_submissions")) {
+        void loadStaffSubmissions();
+      }
+    } catch (error) {
+      message.error(tr(error.message || "Batch signing failed"));
+    } finally {
+      setBatchSigningLoading(false);
+    }
+  };
+
   const requestDirectorArchive = (submissionId) =>
     Modal.confirm({
       title: t("Commit to Archive"),
@@ -344,5 +485,9 @@ export function useReviewActions({
     openLibraryRejectModal,
     confirmLibraryReject,
     requestDirectorArchive,
+    submitAdminIntakeAction,
+    openAdminRejectModal,
+    confirmAdminReject,
+    handleBatchSignLegacy,
   };
 }

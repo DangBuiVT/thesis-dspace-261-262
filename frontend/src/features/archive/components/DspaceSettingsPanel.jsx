@@ -40,7 +40,8 @@ export default function DspaceSettingsPanel() {
         <Button
           type="primary"
           htmlType="submit"
-          loading={savingDspaceSettings || loadingDspaceSettings}
+          loading={savingDspaceSettings}
+          disabled={loadingDspaceSettings}
         >
           {t("Save DSpace settings")}
         </Button>

@@ -23,7 +23,10 @@ export default function SubmissionFormActions() {
     editingSubmissionCapabilities,
     editingSubmissionRecord,
     resetSubmissionForm,
+    isOtherFaculty,
   } = useSubmissions();
+  // A hand-typed faculty (admin) has no submission period to select.
+  const periodReady = periodSelected || isOtherFaculty;
   return (
     <Space wrap>
       {!isFormReadOnly ? (
@@ -36,7 +39,7 @@ export default function SubmissionFormActions() {
             disabled={
               (showNative("submissionPeriodId") &&
                 structuralRequired("submissionPeriodId") &&
-                !periodSelected &&
+                !periodReady &&
                 !editingSubmissionId) ||
               !canSaveCurrentDraft ||
               isFormReadOnly
@@ -54,8 +57,7 @@ export default function SubmissionFormActions() {
             }
             loading={isSubmittingSubmission}
             disabled={
-              (!periodSelected && !editingSubmissionId) ||
-              !canSubmitCurrentThesis
+              (!periodReady && !editingSubmissionId) || !canSubmitCurrentThesis
             }
           >
             {editingSubmissionStatus === "rejected" ||

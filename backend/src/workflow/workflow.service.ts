@@ -185,7 +185,10 @@ export class WorkflowService implements OnModuleInit {
       [submissionId]
     );
 
-    const style = signatureStyle === "diagonal" || signatureStyle === "invisible" ? signatureStyle : "margin_strips";
+    const style =
+      signatureStyle === "diagonal" || signatureStyle === "invisible" || signatureStyle === "margin_strips"
+        ? signatureStyle
+        : await this.archiveSigning.defaultSignatureStyle();
     const pagesSetting = await client.query<{ value: string }>(
       `SELECT value FROM system_settings WHERE key = 'signature_watermark_pages' LIMIT 1`
     );

@@ -1,5 +1,7 @@
 import ThesisEntryWorkspace from "./ThesisEntryWorkspace";
 import SubmissionFilters from "./SubmissionFilters";
+import AdminIntakePanel from "./AdminIntakePanel";
+import LegacySigningPanel from "./LegacySigningPanel";
 import { Tabs, Typography, Space, Button, Modal } from "antd";
 import { DownloadOutlined } from "@ant-design/icons";
 import TaskQueue from "../workflow/TaskQueue.jsx";
@@ -90,19 +92,15 @@ export default function AdminSubmissionDashboard({
                           </Button>
                         </Space>
                       </Space>
-                      {
-                        <SubmissionFilters
-                          {...{
-                            search: staffSearch,
-                            onSearch: setStaffSearch,
-                            semester: staffSemesterFilter,
-                            onSemester: setStaffSemesterFilter,
-                            period: staffPeriodFilter,
-                            onPeriod: setStaffPeriodFilter,
-                            items: staffSubmissions,
-                          }}
-                        />
-                      }
+                      <SubmissionFilters
+                        search={staffSearch}
+                        onSearch={setStaffSearch}
+                        semester={staffSemesterFilter}
+                        onSemester={setStaffSemesterFilter}
+                        period={staffPeriodFilter}
+                        onPeriod={setStaffPeriodFilter}
+                        items={staffSubmissions}
+                      />
                       <TaskQueue
                         rowKey="id"
                         dataSource={staffFilteredSubmissions}
@@ -127,7 +125,7 @@ export default function AdminSubmissionDashboard({
                         width={880}
                         destroyOnClose
                       >
-                        {<ThesisEntryWorkspace />}
+                        <ThesisEntryWorkspace />
                       </Modal>
                     </>
                   ),
@@ -145,6 +143,16 @@ export default function AdminSubmissionDashboard({
           key: "archive",
           label: t("Archive configuration"),
           children: archivePanel,
+        },
+        {
+          key: "intake",
+          label: t("Intake"),
+          children: <AdminIntakePanel />,
+        },
+        {
+          key: "legacy-batch",
+          label: t("Batch signing"),
+          children: <LegacySigningPanel />,
         },
       ]}
     />

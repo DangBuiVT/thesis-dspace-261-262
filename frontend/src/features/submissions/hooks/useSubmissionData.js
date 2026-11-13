@@ -5,13 +5,19 @@ import {
   requestDepositFaculties,
   requestDepositSemesters,
   requestDepositPeriods,
+  requestAdminDepositFaculties,
+  requestAdminDepositSemesters,
+  requestAdminDepositPeriods,
   requestStudents,
 } from "../api.js";
 import { authHeaders, parseResponse } from "../../../shared/api/http.js";
 import { message } from "antd";
 import { isSubmissionSubmitter } from "../model/access.js";
 import { studentEmailFromUser, personOptionLabel } from "../model/people.js";
-import { defaultArchiveMetadata } from "../model/formConfig.js";
+import {
+  defaultArchiveMetadata,
+  OTHER_FACULTY_VALUE,
+} from "../model/formConfig.js";
 import { foldSearchText } from "../../../shared/search.js";
 
 export function useSubmissionData({
@@ -139,10 +145,15 @@ export function useSubmissionData({
     }
   };
 
+  // Administrators browse the full archive tree (closed periods included) to file a thesis anywhere.
+  const isAdmin = auth?.user?.role === "admin";
+
   const loadArchiveFaculties = async () => {
     setIsLoadingArchiveFaculties(true);
     try {
-      const response = await requestDepositFaculties({
+      const response = await (isAdmin
+        ? requestAdminDepositFaculties
+        : requestDepositFaculties)({
         headers: { ...authHeaders(auth?.token) },
       });
       const payload = await parseResponse(response);
@@ -163,13 +174,15 @@ export function useSubmissionData({
   };
 
   const loadArchiveSemesters = async (facultyId) => {
-    if (!facultyId) {
+    if (!facultyId || facultyId === OTHER_FACULTY_VALUE) {
       setArchiveSemesters([]);
       return [];
     }
     setIsLoadingArchiveSemesters(true);
     try {
-      const response = await requestDepositSemesters(facultyId, {
+      const response = await (isAdmin
+        ? requestAdminDepositSemesters
+        : requestDepositSemesters)(facultyId, {
         headers: { ...authHeaders(auth?.token) },
       });
       const payload = await parseResponse(response);
@@ -198,7 +211,9 @@ export function useSubmissionData({
     }
     setIsLoadingArchivePeriods(true);
     try {
-      const response = await requestDepositPeriods(
+      const response = await (isAdmin
+        ? requestAdminDepositPeriods
+        : requestDepositPeriods)(
         encodeURIComponent(facultyId),
         encodeURIComponent(semesterId),
         { headers: { ...authHeaders(auth?.token) } },
@@ -229,6 +244,20 @@ export function useSubmissionData({
 
   const handleSubmissionPeriodChange = (periodId) => {
     submissionForm.setFieldValue("submissionPeriodId", periodId);
+  };
+
+  // Admin picks the faculty of the submission itself ("Other" = typed name, no period).
+  const handleAdminFacultyChange = async (facultyId) => {
+    submissionForm.setFieldsValue({
+      archiveSemesterId: undefined,
+      submissionPeriodId: undefined,
+      facultyOtherName: undefined,
+    });
+    setArchiveSemesters([]);
+    setArchivePeriods([]);
+    if (facultyId && facultyId !== OTHER_FACULTY_VALUE) {
+      await loadArchiveSemesters(facultyId);
+    }
   };
 
   const loadStudents = async () => {
@@ -268,6 +297,7 @@ export function useSubmissionData({
     loadArchivePeriods,
     handleArchiveSemesterChange,
     handleSubmissionPeriodChange,
+    handleAdminFacultyChange,
     loadStudents,
   };
 }

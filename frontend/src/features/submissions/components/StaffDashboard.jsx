@@ -1,10 +1,13 @@
 import SubmissionFilters from "./SubmissionFilters";
+import ReviewerDashboard from "./ReviewerDashboard";
 import { Tabs, Typography, Divider, Space, Button } from "antd";
 import TaskQueue from "../workflow/TaskQueue.jsx";
 import { DownloadOutlined } from "@ant-design/icons";
+import { hasPermission } from "../model/access.js";
 const { Paragraph, Title } = Typography;
 import { useSubmissions } from "../SubmissionContext.jsx";
 
+// Library staff and directors; sections follow granted permissions, not just the role name.
 export default function StaffDashboard({ archivePanel }) {
   const {
     auth,
@@ -38,111 +41,115 @@ export default function StaffDashboard({ archivePanel }) {
     adminSubmissionColumns,
     setStaffDetailRecord,
   } = useSubmissions();
-  return (
-    <Tabs
-      defaultActiveKey="workflow"
-      items={[
-        {
-          key: "workflow",
-          label:
-            auth.user.role === "director"
-              ? t("Approval workflow")
-              : t("Intake & submissions"),
-          children: (
+  const user = auth.user;
+  const canReview = hasPermission(user, "review_academic");
+  const canIntake = hasPermission(user, "library_intake");
+  const canDirect = hasPermission(user, "director_approval");
+  const canViewAll = hasPermission(user, "view_all_submissions");
+  const items = [];
+  if (canReview) {
+    items.push({
+      key: "reviewer",
+      label: t("Reviewer Workspace"),
+      children: <ReviewerDashboard />,
+    });
+  }
+  if (canIntake || canDirect || canViewAll) {
+    items.push({
+      key: "workflow",
+      label:
+        user.role === "director"
+          ? t("Approval workflow")
+          : t("Intake & submissions"),
+      children: (
+        <>
+          <Paragraph type="secondary">
+            {t("Workflow:")} {t("Academic review")} → {t("Library editing")} →{" "}
+            {t("Final approval")} → {t("Archived in portal")}.
+          </Paragraph>
+          <SubmissionFilters
+            search={staffSearch}
+            onSearch={setStaffSearch}
+            semester={staffSemesterFilter}
+            onSemester={setStaffSemesterFilter}
+            period={staffPeriodFilter}
+            onPeriod={setStaffPeriodFilter}
+            items={staffFilterSource}
+          />
+          {canIntake && (
             <>
-              <Paragraph type="secondary">
-                {t("Workflow:")} {t("Academic review")} → {t("Library editing")}{" "}
-                → {t("Final approval")} → {t("Archived in portal")}.
-              </Paragraph>
-              {
-                <SubmissionFilters
-                  {...{
-                    search: staffSearch,
-                    onSearch: setStaffSearch,
-                    semester: staffSemesterFilter,
-                    onSemester: setStaffSemesterFilter,
-                    period: staffPeriodFilter,
-                    onPeriod: setStaffPeriodFilter,
-                    items: staffFilterSource,
-                  }}
-                />
-              }
-              {auth.user.role === "library_staff" && (
-                <>
-                  <Divider style={{ margin: "8px 0" }} />
-                  <Space
-                    style={{ width: "100%", justifyContent: "space-between" }}
-                  >
-                    <Title level={5} style={{ margin: 0 }}>
-                      {t("Library intake queue")}
-                    </Title>
-                    <Button
-                      onClick={() => loadLibraryQueue()}
-                      loading={isLoadingLibraryQueue}
-                    >
-                      {t("Refresh")}
-                    </Button>
-                  </Space>
-                  <TaskQueue
-                    rowKey="id"
-                    dataSource={libraryFilteredQueue}
-                    columns={buildStageQueueColumns(
-                      libraryActionLoadingId,
-                      (id) => submitLibraryAction(id, "approve"),
-                      openLibraryRejectModal,
-                      t("Approve"),
+              <Divider style={{ margin: "8px 0" }} />
+              <Space style={{ width: "100%", justifyContent: "space-between" }}>
+                <Title level={5} style={{ margin: 0 }}>
+                  {t("Library intake queue")}
+                </Title>
+                <Button
+                  onClick={() => loadLibraryQueue()}
+                  loading={isLoadingLibraryQueue}
+                >
+                  {t("Refresh")}
+                </Button>
+              </Space>
+              <TaskQueue
+                rowKey="id"
+                dataSource={libraryFilteredQueue}
+                columns={buildStageQueueColumns(
+                  libraryActionLoadingId,
+                  (id) => submitLibraryAction(id, "approve"),
+                  openLibraryRejectModal,
+                  t("Approve"),
+                )}
+                loading={isLoadingLibraryQueue}
+                pagination={{ pageSize: 5 }}
+                scroll={{ x: 1250 }}
+              />
+            </>
+          )}
+          {canDirect && (
+            <>
+              <Divider style={{ margin: "8px 0" }} />
+              <Space style={{ width: "100%", justifyContent: "space-between" }}>
+                <div>
+                  <Title level={5} style={{ margin: 0 }}>
+                    {t("Archive approved submissions")}
+                  </Title>
+                  <Paragraph type="secondary" style={{ marginBottom: 0 }}>
+                    {t(
+                      "Archive this submission in the portal? DSpace publication is a separate step.",
                     )}
-                    loading={isLoadingLibraryQueue}
-                    pagination={{ pageSize: 5 }}
-                    scroll={{ x: 1250 }}
-                  />
-                </>
-              )}
-              {auth.user.role === "director" && (
-                <>
-                  <Divider style={{ margin: "8px 0" }} />
-                  <Space
-                    style={{ width: "100%", justifyContent: "space-between" }}
-                  >
-                    <div>
-                      <Title level={5} style={{ margin: 0 }}>
-                        {t("Archive approved submissions")}
-                      </Title>
-                      <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-                        {t(
-                          "Archive this submission in the portal? DSpace publication is a separate step.",
-                        )}
-                      </Paragraph>
-                    </div>
-                    <Button
-                      onClick={() => loadDirectorQueue()}
-                      loading={isLoadingDirectorQueue}
-                    >
-                      {t("Refresh")}
-                    </Button>
-                  </Space>
-                  <TaskQueue
-                    rowKey="id"
-                    dataSource={directorFilteredQueue}
-                    columns={buildDirectorArchiveColumns(
-                      directorActionLoadingId,
-                      (id) => requestDirectorArchive(id),
-                      (id) =>
-                        submitStageAction(
-                          "director-action",
-                          id,
-                          "approve",
-                          undefined,
-                          t("Approved"),
-                        ),
-                      (id) => openDirectorReturnModal(id),
-                    )}
-                    loading={isLoadingDirectorQueue}
-                    pagination={{ pageSize: 5 }}
-                    scroll={{ x: 1250 }}
-                  />
-                </>
-              )}
+                  </Paragraph>
+                </div>
+                <Button
+                  onClick={() => loadDirectorQueue()}
+                  loading={isLoadingDirectorQueue}
+                >
+                  {t("Refresh")}
+                </Button>
+              </Space>
+              <TaskQueue
+                rowKey="id"
+                dataSource={directorFilteredQueue}
+                columns={buildDirectorArchiveColumns(
+                  directorActionLoadingId,
+                  (id) => requestDirectorArchive(id),
+                  (id) =>
+                    submitStageAction(
+                      "director-action",
+                      id,
+                      "approve",
+                      undefined,
+                      t("Approved"),
+                    ),
+                  (id) => openDirectorReturnModal(id),
+                )}
+                loading={isLoadingDirectorQueue}
+                pagination={{ pageSize: 5 }}
+                scroll={{ x: 1250 }}
+              />
+            </>
+          )}
+          {canViewAll && (
+            <>
               <Divider style={{ margin: "8px 0" }} />
               <Space style={{ width: "100%", justifyContent: "space-between" }}>
                 <Title level={5} style={{ margin: 0 }}>
@@ -158,12 +165,8 @@ export default function StaffDashboard({ archivePanel }) {
                   <Button
                     onClick={() => {
                       void loadStaffSubmissions();
-                      if (auth.user.role === "library_staff") {
-                        void loadLibraryQueue();
-                      }
-                      if (auth.user.role === "director") {
-                        void loadDirectorQueue();
-                      }
+                      if (canIntake) void loadLibraryQueue();
+                      if (canDirect) void loadDirectorQueue();
                     }}
                     loading={
                       isLoadingSubmissions ||
@@ -188,14 +191,17 @@ export default function StaffDashboard({ archivePanel }) {
                 })}
               />
             </>
-          ),
-        },
-        {
-          key: "archive",
-          label: t("Archive configuration"),
-          children: archivePanel,
-        },
-      ]}
-    />
-  );
+          )}
+        </>
+      ),
+    });
+  }
+  if (user.role === "library_staff" || user.role === "director") {
+    items.push({
+      key: "archive",
+      label: t("Archive configuration"),
+      children: archivePanel,
+    });
+  }
+  return <Tabs defaultActiveKey={items[0]?.key} items={items} />;
 }

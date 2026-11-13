@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { studentEmailFromUser } from "../model/people.js";
 import { defaultArchiveMetadata } from "../model/formConfig.js";
+import { hasPermission } from "../model/access.js";
 
 export function useSubmissionLifecycle({
   auth,
@@ -9,6 +10,8 @@ export function useSubmissionLifecycle({
   loadLibraryQueue,
   loadDirectorQueue,
   loadReviewerQueue,
+  loadAdminIntakeQueue,
+  loadLegacyBatchList,
   loadStudents,
   loadArchiveFaculties,
   loadReviewers,
@@ -18,24 +21,31 @@ export function useSubmissionLifecycle({
   loadSubmissionFormFields,
   applyFormFieldDefaults,
 }) {
+  // Queues follow permissions (from /auth/me), so a role with several grants sees every queue it may act on.
   useEffect(() => {
-    if (auth?.user?.role === "student" && auth?.user?.id) {
-      void loadStudentSubmissions(auth.user.id);
+    const user = auth?.user;
+    if (!user) {
+      return;
     }
-    const role = auth?.user?.role;
-    if (role === "library_staff" || role === "director" || role === "admin") {
+    if (user.role === "student" && user.id) {
+      void loadStudentSubmissions(user.id);
+    }
+    if (hasPermission(user, "view_all_submissions")) {
       void loadStaffSubmissions();
     }
-    if (role === "library_staff") {
+    if (user.role === "admin") {
+      // Administrators act through the intake queue, not the per-role queues.
+      void loadAdminIntakeQueue();
+      void loadLegacyBatchList();
+      return;
+    }
+    if (hasPermission(user, "library_intake")) {
       void loadLibraryQueue();
     }
-    if (role === "director") {
+    if (hasPermission(user, "director_approval")) {
       void loadDirectorQueue();
     }
-  }, [auth]);
-
-  useEffect(() => {
-    if (auth?.user?.role === "reviewer") {
+    if (hasPermission(user, "review_academic")) {
       void loadReviewerQueue();
     }
   }, [auth]);

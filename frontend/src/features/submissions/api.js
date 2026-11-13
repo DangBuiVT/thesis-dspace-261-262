@@ -49,3 +49,34 @@ export const requestSubmissionHistory = (submissionId, options) =>
   request(`/api/submissions/${submissionId}/history`, options);
 export const requestSubmissionMetadata = (submissionId, options) =>
   request(`/api/submissions/${submissionId}/metadata`, options);
+// Stamped preview of an unsigned PDF in a given visible style (signed copies ignore the style).
+export const requestSubmissionFilePreview = (
+  submissionId,
+  fileId,
+  style,
+  options,
+) =>
+  request(
+    `/api/submissions/${submissionId}/files/${fileId}/download?style=${encodeURIComponent(style)}`,
+    options,
+  );
+export const requestSignatureStatus = (submissionId, options) =>
+  request(`/api/submissions/${submissionId}/signature-status`, options);
+// Administrators see every faculty / semester / period, including closed ones.
+export const requestAdminDepositFaculties = (options) =>
+  request("/api/archive/admin/faculties", options);
+export const requestAdminDepositSemesters = (facultyId, options) =>
+  request(`/api/archive/admin/faculties/${facultyId}/semesters`, options);
+export const requestAdminDepositPeriods = (facultyId, semesterId, options) =>
+  request(
+    `/api/archive/admin/submission-periods?facultyId=${facultyId}&semesterId=${semesterId}`,
+    options,
+  );
+export const requestAdminIntakeQueue = (options) =>
+  request("/api/reviews/admin-intake-queue", options);
+export const requestAdminIntakeAction = (options) =>
+  request("/api/reviews/admin-intake-action", options);
+export const requestLegacyBatchQueue = (options) =>
+  request("/api/reviews/legacy-batch-queue", options);
+export const requestBatchSignLegacy = (options) =>
+  request("/api/reviews/batch-sign-legacy", options);

@@ -8,6 +8,7 @@ import WorkflowPanel from "./components/WorkflowPanel";
 import GroupsPanel from "./components/GroupsPanel";
 import SettingsPanel from "./components/SettingsPanel";
 import EmailSettingsPanel from "./components/EmailSettingsPanel";
+import SignatureSettingsPanel from "./components/SignatureSettingsPanel";
 import FormFieldDialog from "./components/FormFieldDialog";
 import UserEditorDialog from "./components/UserEditorDialog";
 import UserImportDialog from "./components/UserImportDialog";
@@ -44,6 +45,11 @@ function AdminView({ mode, hiddenTabs, archivePanel }) {
       key: "email",
       label: t("Email configuration"),
       children: <EmailSettingsPanel />,
+    },
+    {
+      key: "signature",
+      label: t("Digital signature"),
+      children: <SignatureSettingsPanel />,
     },
     {
       key: "archive",

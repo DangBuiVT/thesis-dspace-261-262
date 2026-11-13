@@ -1,5 +1,19 @@
 export const THESIS_MAX_FILE_SIZE_MB = 30;
 
+// Admin-only faculty option: a faculty that is not in the archive tree, typed by hand.
+export const OTHER_FACULTY_VALUE = "__other__";
+
+// Students may keep several theses (the one-active-submission rule was removed
+// together with idx_submissions_one_active_per_student).
+export const ALLOW_MULTIPLE_STUDENT_SUBMISSIONS = true;
+
+// Review steps an admin can switch off for a single submission, in workflow order.
+export const WORKFLOW_STEP_FIELDS = [
+  { name: "workflowReviewer", role: "reviewer", label: "Reviewer" },
+  { name: "workflowLibrary", role: "library_staff", label: "Library" },
+  { name: "workflowDirector", role: "director", label: "Director" },
+];
+
 export const THESIS_YEAR_OPTIONS = Array.from({ length: 12 }, (_, index) => {
   const year = new Date().getFullYear() + 1 - index;
   return { value: String(year), label: String(year) };

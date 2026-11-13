@@ -5,6 +5,8 @@ import {
   canStaffDeleteSubmission,
 } from "../model/access.js";
 import ReviewWorkspace from "../workflow/ReviewWorkspace.jsx";
+import SignatureStylePicker from "../workflow/SignatureStylePicker.jsx";
+import BatchSigningResultDialog from "./BatchSigningResultDialog.jsx";
 const { Paragraph } = Typography;
 const { TextArea } = Input;
 import { useSubmissions } from "../SubmissionContext.jsx";
@@ -63,7 +65,20 @@ export default function SubmissionDialogs({
     setDirectorReturnTargetId,
     setDirectorReturnReason,
     directorReturnReason,
+    adminRejectModalOpen,
+    adminIntakeActionLoadingId,
+    confirmAdminReject,
+    setAdminRejectModalOpen,
+    setAdminRejectTargetId,
+    setAdminRejectReason,
+    adminRejectReason,
+    submitAdminIntakeAction,
+    openAdminRejectModal,
   } = useSubmissions();
+  // Director (or admin acting at the final step) picks the visible style before archiving.
+  const showSignatureTools = (record) =>
+    ["director", "admin"].includes(auth.user.role) &&
+    (record.status || record.submission_status) !== "archived";
   return (
     <>
       <Modal
@@ -230,11 +245,53 @@ export default function SubmissionDialogs({
               void loadStaffSubmissions();
               if (auth.user.role === "library_staff") void loadLibraryQueue();
             }}
+            signatureTools={
+              showSignatureTools(staffDetailRecord) ? (
+                <SignatureStylePicker
+                  submissionId={staffDetailRecord.id}
+                  files={staffDetailRecord.files || []}
+                  token={auth.token}
+                />
+              ) : null
+            }
             actions={
-              staffDetailRecord.current_step_role === auth?.user.role &&
+              isAdminActor &&
+              staffDetailRecord.current_step_role &&
               ["reviewing", "approved"].includes(
                 staffDetailRecord.status || staffDetailRecord.submission_status,
               ) ? (
+                <>
+                  <Button
+                    danger
+                    disabled={Boolean(adminIntakeActionLoadingId)}
+                    onClick={() => openAdminRejectModal(staffDetailRecord.id)}
+                  >
+                    {t("Reject")}
+                  </Button>
+                  <Button
+                    type="primary"
+                    loading={adminIntakeActionLoadingId === staffDetailRecord.id}
+                    onClick={() =>
+                      submitAdminIntakeAction(
+                        staffDetailRecord.id,
+                        staffDetailRecord.current_step_role === "director" &&
+                          staffDetailRecord.current_step_is_last
+                          ? "archive"
+                          : "approve",
+                      )
+                    }
+                  >
+                    {staffDetailRecord.current_step_role === "director" &&
+                    staffDetailRecord.current_step_is_last
+                      ? t("Archive & sign")
+                      : t("Approve")}
+                  </Button>
+                </>
+              ) : staffDetailRecord.current_step_role === auth?.user.role &&
+                ["reviewing", "approved"].includes(
+                  staffDetailRecord.status ||
+                    staffDetailRecord.submission_status,
+                ) ? (
                 <>
                   {auth.user.role === "library_staff" ? (
                     <>
@@ -383,6 +440,34 @@ export default function SubmissionDialogs({
           onChange={(event) => setDirectorReturnReason(event.target.value)}
         />
       </Modal>
+      <Modal
+        title={t("Reject thesis (admin intake)")}
+        open={adminRejectModalOpen}
+        confirmLoading={Boolean(adminIntakeActionLoadingId)}
+        cancelButtonProps={{ disabled: Boolean(adminIntakeActionLoadingId) }}
+        closable={!adminIntakeActionLoadingId}
+        maskClosable={!adminIntakeActionLoadingId}
+        onOk={confirmAdminReject}
+        onCancel={() => {
+          setAdminRejectModalOpen(false);
+          setAdminRejectTargetId(null);
+          setAdminRejectReason("");
+        }}
+        okText={t("Reject")}
+        okButtonProps={{ danger: true, "aria-label": t("Reject") }}
+      >
+        <Paragraph type="secondary">
+          {t("Please provide a clear reason for rejection.")}
+        </Paragraph>
+        <TextArea
+          aria-label={t("Reason")}
+          disabled={Boolean(adminIntakeActionLoadingId)}
+          rows={4}
+          value={adminRejectReason}
+          onChange={(event) => setAdminRejectReason(event.target.value)}
+        />
+      </Modal>
+      <BatchSigningResultDialog />
     </>
   );
 }

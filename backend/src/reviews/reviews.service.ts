@@ -653,7 +653,7 @@ export class ReviewsService {
             submissionId: dto.submissionId,
             actorSub: user.sub,
             actorName: user.displayName || user.username || "Thư viện",
-            style: resolveSignatureStyle(dto.signatureStyle || (dto.metadata as any)?.signatureStyle),
+            style: resolveSignatureStyle(dto.signatureStyle || (dto.metadata as any)?.signatureStyle || (await this.archiveSigning.defaultSignatureStyle())),
             watermarkPages: dto.watermarkPages || (dto.metadata as any)?.watermarkPages || (await this.db.query<{ value: string }>("SELECT value FROM system_settings WHERE key = 'signature_watermark_pages' LIMIT 1")).rows[0]?.value || "10",
           });
           const evidence = archived ? signedEvidence(archived) : null;
@@ -1100,7 +1100,7 @@ export class ReviewsService {
               submissionId: dto.submissionId,
               actorSub: user.sub,
               actorName: user.displayName || user.username || "Thư viện",
-              style: resolveSignatureStyle(dto.signatureStyle || (dto.metadata as any)?.signatureStyle),
+              style: resolveSignatureStyle(dto.signatureStyle || (dto.metadata as any)?.signatureStyle || (await this.archiveSigning.defaultSignatureStyle())),
               watermarkPages: dto.watermarkPages || (dto.metadata as any)?.watermarkPages || (await this.db.query<{ value: string }>("SELECT value FROM system_settings WHERE key = 'signature_watermark_pages' LIMIT 1")).rows[0]?.value || "10",
             });
             const evidence = archived ? signedEvidence(archived) : null;
@@ -1304,7 +1304,8 @@ export class ReviewsService {
     if (user.role !== WorkflowRole.ADMIN) {
       throw new ForbiddenException();
     }
-    const { submissionIds, signatureStyle = "margin_strips", watermarkPages } = dto;
+    const { submissionIds, watermarkPages } = dto;
+    const signatureStyle = resolveSignatureStyle(dto.signatureStyle || (await this.archiveSigning.defaultSignatureStyle()));
     if (!Array.isArray(submissionIds) || submissionIds.length === 0) {
       throw new BadRequestException("Vui lòng chọn ít nhất 1 bài nộp để ký số");
     }
