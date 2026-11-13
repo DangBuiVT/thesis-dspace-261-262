@@ -1,3 +1,4 @@
+import { ApiBearerAuth } from "@nestjs/swagger";
 import { Controller, Get, Param, ParseUUIDPipe, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { Roles } from "../auth/roles.decorator";
@@ -6,6 +7,7 @@ import { PermissionsGuard } from "../auth/permissions.guard";
 import { RequirePermissions } from "../auth/permissions.decorator";
 import { SubmissionPeriodsService } from "./submission-periods.service";
 
+@ApiBearerAuth()
 @Controller("archive")
 export class ArchiveController {
   constructor(private readonly submissionPeriodsService: SubmissionPeriodsService) {}

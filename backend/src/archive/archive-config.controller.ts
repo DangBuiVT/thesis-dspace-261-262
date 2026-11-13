@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { ApiBadRequestResponse, ApiBearerAuth, ApiConflictResponse, ApiCreatedResponse, ApiForbiddenResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiTags, ApiUnauthorizedResponse } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import { RequirePermissions } from "../auth/permissions.decorator";
@@ -14,7 +15,12 @@ import { UpdateSubmissionPeriodDto } from "./dto/update-submission-period.dto";
 import { DspacePublishService } from "./dspace-publish.service";
 import { DspaceProvisionerService } from "./dspace-provisioner.service";
 import { DspaceSyncService } from "./dspace-sync.service";
+import { CreateSemesterForAllResponseDto, SemesterDetailResponseDto, SemesterResponseDto } from "./dto/semester-response.dto";
 
+@ApiTags("Archive configuration")
+@ApiBearerAuth()
+@ApiUnauthorizedResponse({ description: "Thiếu JWT hoặc token không hợp lệ/hết hạn" })
+@ApiForbiddenResponse({ description: "Tài khoản không có quyền thực hiện thao tác" })
 @Controller("archive-config")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class ArchiveConfigController {
@@ -26,6 +32,7 @@ export class ArchiveConfigController {
   ) {}
 
   @Get("faculties")
+  @ApiOperation({ summary: "Danh sách khoa (lấy facultyId để tạo học kỳ)" })
   @RequirePermissions("library_intake", "configure_system", "director_approval", "view_all_submissions")
   listFaculties() {
     return this.archiveConfigService.listFaculties();
@@ -100,42 +107,71 @@ export class ArchiveConfigController {
   }
 
   @Get("faculties/:facultyId/semesters")
+  @ApiOperation({ summary: "Danh sách học kỳ của một khoa" })
+  @ApiParam({ name: "facultyId", format: "uuid" })
+  @ApiOkResponse({ type: [SemesterResponseDto] })
+  @ApiBadRequestResponse({ description: "facultyId không phải UUID hợp lệ" })
+  @ApiNotFoundResponse({ description: "Không tìm thấy khoa" })
   @RequirePermissions("library_intake", "configure_system", "director_approval", "view_all_submissions")
-  listSemesters(@Param("facultyId") facultyId: string) {
+  listSemesters(@Param("facultyId", ParseUUIDPipe) facultyId: string) {
     return this.archiveConfigService.listSemesters(facultyId);
   }
 
   @Post("faculties/:facultyId/semesters")
+  @ApiOperation({ summary: "Thêm học kỳ cho một khoa", description: "Yêu cầu quyền library_intake hoặc configure_system. Khoa phải đang hoạt động; tên học kỳ không được trùng trong cùng khoa (không phân biệt hoa/thường)." })
+  @ApiParam({ name: "facultyId", format: "uuid" })
+  @ApiCreatedResponse({ type: SemesterResponseDto })
+  @ApiBadRequestResponse({ description: "Tên học kỳ hoặc facultyId không hợp lệ, hoặc khoa đã ngừng hoạt động" })
+  @ApiNotFoundResponse({ description: "Không tìm thấy khoa" })
+  @ApiConflictResponse({ description: "Tên học kỳ đã tồn tại trong khoa" })
   @RequirePermissions("library_intake", "configure_system")
   createSemester(
     @Req() req: { user: JwtPayload },
-    @Param("facultyId") facultyId: string,
+    @Param("facultyId", ParseUUIDPipe) facultyId: string,
     @Body() body: CreateSemesterDto
   ) {
     return this.archiveConfigService.createSemester(req.user, facultyId, body);
   }
 
   @Post("semesters/for-all-faculties")
+  @ApiOperation({ summary: "Thêm học kỳ cho tất cả khoa đang hoạt động", description: "Yêu cầu quyền library_intake hoặc configure_system. Bỏ qua khoa đã có học kỳ cùng tên (không phân biệt hoa/thường). Không có khoa đang hoạt động thì trả về createdCount = 0 và skippedCount = 0." })
+  @ApiCreatedResponse({ type: CreateSemesterForAllResponseDto })
+  @ApiBadRequestResponse({ description: "Tên học kỳ không hợp lệ" })
   @RequirePermissions("library_intake", "configure_system")
   createSemesterForAllFaculties(@Req() req: { user: JwtPayload }, @Body() body: CreateSemesterDto) {
     return this.archiveConfigService.createSemesterForAllFaculties(req.user, body);
   }
 
   @Get("semesters/:semesterId")
+  @ApiOperation({ summary: "Chi tiết học kỳ" })
+  @ApiParam({ name: "semesterId", format: "uuid" })
+  @ApiOkResponse({ type: SemesterDetailResponseDto })
+  @ApiBadRequestResponse({ description: "semesterId không phải UUID hợp lệ" })
+  @ApiNotFoundResponse({ description: "Không tìm thấy học kỳ" })
   @RequirePermissions("library_intake", "configure_system", "director_approval", "view_all_submissions")
-  getSemester(@Param("semesterId") semesterId: string) {
+  getSemester(@Param("semesterId", ParseUUIDPipe) semesterId: string) {
     return this.archiveConfigService.getSemesterDetail(semesterId);
   }
 
   @Patch("semesters/:semesterId")
+  @ApiOperation({ summary: "Cập nhật tên hoặc trạng thái học kỳ" })
+  @ApiParam({ name: "semesterId", format: "uuid" })
+  @ApiOkResponse({ type: SemesterDetailResponseDto })
+  @ApiBadRequestResponse({ description: "Dữ liệu cập nhật hoặc semesterId không hợp lệ" })
+  @ApiNotFoundResponse({ description: "Không tìm thấy học kỳ" })
   @RequirePermissions("library_intake", "configure_system")
-  updateSemester(@Param("semesterId") semesterId: string, @Body() body: UpdateSemesterDto) {
+  updateSemester(@Param("semesterId", ParseUUIDPipe) semesterId: string, @Body() body: UpdateSemesterDto) {
     return this.archiveConfigService.updateSemester(semesterId, body);
   }
 
   @Delete("semesters/:semesterId")
+  @ApiOperation({ summary: "Xóa học kỳ và các đợt nộp thuộc học kỳ" })
+  @ApiParam({ name: "semesterId", format: "uuid" })
+  @ApiOkResponse({ schema: { type: "object", required: ["deleted", "id"], properties: { deleted: { type: "boolean", example: true }, id: { type: "string", format: "uuid" } } } })
+  @ApiBadRequestResponse({ description: "semesterId không phải UUID hợp lệ" })
+  @ApiNotFoundResponse({ description: "Không tìm thấy học kỳ" })
   @RequirePermissions("library_intake", "configure_system")
-  deleteSemester(@Param("semesterId") semesterId: string) {
+  deleteSemester(@Param("semesterId", ParseUUIDPipe) semesterId: string) {
     return this.archiveConfigService.deleteSemester(semesterId);
   }
 

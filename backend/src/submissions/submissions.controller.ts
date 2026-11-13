@@ -1,3 +1,4 @@
+import { ApiBearerAuth } from "@nestjs/swagger";
 import {
   BadRequestException,
   Body,
@@ -67,6 +68,7 @@ type UploadedThesisFile = {
   filename: string;
 };
 
+@ApiBearerAuth()
 @Controller("submissions")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class SubmissionsController {
