@@ -1,4 +1,4 @@
-﻿import {
+import {
   BadRequestException,
   ForbiddenException,
   Injectable,
@@ -15,6 +15,7 @@ import type { JwtPayload } from "../auth/jwt.strategy";
 import { GroupsService } from "../workflow/groups.service";
 import { WorkflowService } from "../workflow/workflow.service";
 import { ReviewActionDto } from "./dto/review-action.dto";
+import { formatStandardDspaceFileName } from "../archive/utils/thesis-file-namer.util";
 import {
   SubmissionStatus,
   ReviewDecision,
@@ -718,6 +719,65 @@ export class ReviewsService {
              WHERE id = $2::uuid`,
             [handleId, dto.submissionId]
           );
+
+          // Cập nhật tên file chuẩn hóa theo quy định lưu chiểu HCMUT / DSpace
+          try {
+            const subInfo = await client.query<{
+              thesis_year: string | null;
+              date_issued: string | null;
+              semester_name: string | null;
+              faculty_name: string | null;
+              student_id: string;
+              author_user_ids: string[];
+              thesis_file_name: string | null;
+            }>(
+              `SELECT s.thesis_year, s.date_issued,
+                      COALESCE(NULLIF(s.semester_name, ''), sem.name) AS semester_name,
+                      COALESCE(NULLIF(s.faculty_name, ''), f.name) AS faculty_name,
+                      s.student_id,
+                      (
+                        SELECT COALESCE(json_agg(sa.user_id ORDER BY sa.sort_order), '[]'::json)
+                        FROM submission_authors sa
+                        WHERE sa.submission_id = s.id
+                      ) AS author_user_ids,
+                      (
+                        SELECT sf.file_name
+                        FROM submission_files sf
+                        WHERE sf.submission_id = s.id AND sf.file_type = 'thesis'
+                        LIMIT 1
+                      ) AS thesis_file_name
+               FROM submissions s
+               LEFT JOIN submission_periods sp ON sp.id = s.submission_period_id
+               LEFT JOIN semesters sem ON sem.id = sp.semester_id
+               LEFT JOIN faculties f ON f.id = sem.faculty_id
+               WHERE s.id = $1::uuid
+               LIMIT 1`,
+              [dto.submissionId],
+            );
+            const subRow = subInfo.rows[0];
+            if (subRow) {
+              const standardPdfFileName = formatStandardDspaceFileName({
+                thesisYear: subRow.thesis_year,
+                dateIssued: subRow.date_issued,
+                semesterName: subRow.semester_name,
+                facultyName: subRow.faculty_name,
+                submitterId: subRow.student_id,
+                authorIds: Array.isArray(subRow.author_user_ids) ? subRow.author_user_ids : [],
+                fileType: "thesis",
+                originalFileName: subRow.thesis_file_name,
+              });
+              if (standardPdfFileName) {
+                await client.query(
+                  `UPDATE submission_files
+                   SET file_name = $1
+                   WHERE submission_id = $2::uuid AND file_type = 'thesis'`,
+                  [standardPdfFileName, dto.submissionId],
+                );
+              }
+            }
+          } catch (e) {
+            // Log warning nhưng không làm hỏng transaction archive
+          }
 
           await client.query(
             `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)

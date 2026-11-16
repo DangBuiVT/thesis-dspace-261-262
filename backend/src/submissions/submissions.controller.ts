@@ -210,7 +210,10 @@ export class SubmissionsController {
     return this.submissionsService.getStudentSubmissions(studentId);
   }
 
-  @Get(":submissionId/files/:fileId/download")
+  @Get([
+    ":submissionId/files/:fileId/download",
+    ":submissionId/files/:fileId/:fileName",
+  ])
   @RequirePermissions(
     "submit_thesis",
     "review_academic",
@@ -224,17 +227,21 @@ export class SubmissionsController {
     @Param("submissionId") submissionId: string,
     @Param("fileId") fileId: string,
     @Query("style") style: string | undefined,
+    @Query("download") download: string | undefined,
   ) {
     const { stream, contentType, fileName } =
       await this.submissionsService.getSubmissionFileStream(
         req.user,
         submissionId,
         fileId,
+        style,
       );
     const encoded = encodeURIComponent(fileName);
+    const asciiFallback = fileName.replace(/[^\x20-\x7E]/g, "_");
+    const dispositionType = download === "1" || download === "true" ? "attachment" : "inline";
     return new StreamableFile(stream, {
       type: contentType,
-      disposition: `inline; filename*=UTF-8''${encoded}`,
+      disposition: `${dispositionType}; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`,
     });
   }
 

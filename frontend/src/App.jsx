@@ -1281,28 +1281,29 @@ function App() {
     },
   ];
 
-  const openProtectedSubmissionFile = async (submissionId, fileId) => {
-    const key = `${submissionId}:${fileId}`;
-    setFileOpenLoadingKey(key);
-    try {
-      const response = await fetch(`/api/submissions/${submissionId}/files/${fileId}/download`, {
-        headers: {
-          ...authHeaders(auth?.token)
-        }
-      });
-      if (!response.ok) {
-        const payload = await parseResponse(response);
-        throw new Error(payload?.message || `Unable to open file (${response.status})`);
-      }
-      const blob = await response.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      window.open(objectUrl, "_blank", "noopener,noreferrer");
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 120000);
-    } catch (error) {
-      message.error(tr(error.message || "Unable to open file"));
-    } finally {
-      setFileOpenLoadingKey(null);
+  const openProtectedSubmissionFile = (submissionId, fileId, preferredFileName) => {
+    if (!auth?.token) {
+      message.error(t("Authentication required"));
+      return;
     }
+    const fileName = preferredFileName || "thesis.pdf";
+    const viewUrl = `/api/submissions/${submissionId}/files/${fileId}/${encodeURIComponent(fileName)}?token=${encodeURIComponent(auth.token)}`;
+    window.open(viewUrl, "_blank", "noopener,noreferrer");
+  };
+
+  const downloadSubmissionFile = (submissionId, fileId, preferredFileName) => {
+    if (!auth?.token) {
+      message.error(t("Authentication required"));
+      return;
+    }
+    const fileName = preferredFileName || "thesis.pdf";
+    const downloadUrl = `/api/submissions/${submissionId}/files/${fileId}/${encodeURIComponent(fileName)}?token=${encodeURIComponent(auth.token)}&download=1`;
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const reviewerQueueColumns = [
@@ -1359,7 +1360,7 @@ function App() {
                   lineHeight: 1.25
                 }}
                 loading={fileOpenLoadingKey === `${record.id}:${f.id}`}
-                onClick={() => void openProtectedSubmissionFile(record.id, f.id)}
+                onClick={() => void openProtectedSubmissionFile(record.id, f.id, f.fileName)}
               >
                 <Tag style={{ marginInlineEnd: 4 }}>{f.fileType}</Tag>
                 <span style={{ wordBreak: "break-word", overflowWrap: "anywhere" }}>{f.fileName}</span>
@@ -3143,9 +3144,13 @@ function App() {
                     <Button
                       type="primary"
                       size="small"
-                      loading={fileOpenLoadingKey === `${record.id}:${f.id}`}
-                      onClick={() => void openProtectedSubmissionFile(record.id, f.id)}
+                      onClick={() => openProtectedSubmissionFile(record.id, f.id, f.fileName)}
                     >{t("Open")}</Button>
+                    <Button
+                      size="small"
+                      icon={<DownloadOutlined />}
+                      onClick={() => downloadSubmissionFile(record.id, f.id, f.fileName)}
+                    >{t("Download") || "Tải về"}</Button>
                   </Space>
                 </li>
               ))}
@@ -3452,7 +3457,7 @@ function App() {
                       maxCount={1}
                       onPreview={(file) => {
                         if (file?.existingFileId && editingSubmissionId) {
-                          void openProtectedSubmissionFile(editingSubmissionId, file.existingFileId);
+                          void openProtectedSubmissionFile(editingSubmissionId, file.existingFileId, file.name);
                         }
                       }}
                     >
@@ -4266,9 +4271,13 @@ function App() {
                         <Button
                           type="primary"
                           size="small"
-                          loading={fileOpenLoadingKey === `${reviewerDetailRecord.id}:${f.id}`}
-                          onClick={() => void openProtectedSubmissionFile(reviewerDetailRecord.id, f.id)}
+                          onClick={() => openProtectedSubmissionFile(reviewerDetailRecord.id, f.id, f.fileName)}
                         >{t("Open")}</Button>
+                        <Button
+                          size="small"
+                          icon={<DownloadOutlined />}
+                          onClick={() => downloadSubmissionFile(reviewerDetailRecord.id, f.id, f.fileName)}
+                        >{t("Download") || "Tải về"}</Button>
                       </Space>
                     </li>
                   ))}
@@ -4395,9 +4404,13 @@ function App() {
                         <Button
                           type="primary"
                           size="small"
-                          loading={fileOpenLoadingKey === `${staffDetailRecord.id}:${f.id}`}
-                          onClick={() => void openProtectedSubmissionFile(staffDetailRecord.id, f.id)}
+                          onClick={() => openProtectedSubmissionFile(staffDetailRecord.id, f.id, f.fileName)}
                         >{t("Open")}</Button>
+                        <Button
+                          size="small"
+                          icon={<DownloadOutlined />}
+                          onClick={() => downloadSubmissionFile(staffDetailRecord.id, f.id, f.fileName)}
+                        >{t("Download") || "Tải về"}</Button>
                       </Space>
                       <div>
                         <Text type="secondary" style={{ fontSize: 12, wordBreak: "break-all" }}>
