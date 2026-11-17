@@ -273,7 +273,7 @@ describe("Approve and reject", () => {
     expect((await rowOf(student, id)).status).toBe("archived");
   });
 
-  it("TC-DIR-002 lets the director reject an approved thesis", async () => {
+  it("TC-DIR-002 lets the director return an approved thesis to Editor", async () => {
     const { student, id } = await freshSubmission();
     await http()
       .post("/reviews/action")
@@ -286,9 +286,9 @@ describe("Approve and reject", () => {
     const rejected = await http()
       .post("/reviews/director-action")
       .set("Authorization", `Bearer ${directorToken}`)
-      .send({ submissionId: id, action: "reject", comment: "Hold for metadata review" });
+      .send({ submissionId: id, action: "return_to_editor", comment: "Hold for metadata review" });
     expect(rejected.status).toBe(201);
-    expect((await rowOf(student, id)).status).toBe("rejected");
+    expect((await rowOf(student, id)).status).toBe("reviewing");
   });
 
   it("TC-DIR-003 refuses archive unless the thesis is at the director step", async () => {

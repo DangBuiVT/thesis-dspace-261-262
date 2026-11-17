@@ -12,12 +12,20 @@ export class ReviewActionDto {
   submissionId!: string;
 
   @IsString()
-  @IsIn(["approve", "reject", "archive"])
-  action!: "approve" | "reject" | "archive";
+  @IsIn(["approve", "reject", "archive", "return_to_editor"])
+  action!: "approve" | "reject" | "archive" | "return_to_editor";
 
   @IsString()
   @IsOptional()
   comment?: string;
+
+  @IsString()
+  @IsOptional()
+  signatureStyle?: string;
+
+  @IsString()
+  @IsOptional()
+  watermarkPages?: string;
 
   @IsObject()
   @IsOptional()
@@ -35,5 +43,7 @@ export class ReviewActionDto {
     documentType?: string;
     description?: string;
     extraMetadata?: Record<string, string>;
+    signatureStyle?: string;
+    watermarkPages?: string;
   };
 }

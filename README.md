@@ -65,10 +65,13 @@ docker compose up --build
 | Giao diện | http://localhost:5173 |
 | API | http://localhost:3000 |
 | Kiểm tra API | http://localhost:3000/health |
+| Swagger UI | http://localhost:3000/docs |
 | Mailpit (hộp thư local) | http://localhost:8025 |
 | Postgres | `localhost:5433` (user `thesis_user`, db `thesis_portal`, mật khẩu `thesis_pass`) |
 
 Postgres chỉ chạy script trong `db/init/` lần đầu, khi volume còn trống. `db/thesis_portal_full.sql` là bản sao để chạy tay bằng `psql`, không được mount vào container.
+
+Lần đầu, service `backend-seed` tạo dữ liệu demo và PDF sau khi Postgres sẵn sàng; backend chờ seed hoàn tất. Trạng thái được lưu trong database nên restart hoặc `down` / `up` thông thường không seed lại, không khôi phục bản ghi demo đã xóa. Database cũ không có marker khởi tạo cũng được giữ nguyên. Xem [hướng dẫn seed lần đầu](frontend/docs/docker-first-start.md).
 
 Dừng stack:
 

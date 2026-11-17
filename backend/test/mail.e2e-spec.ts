@@ -100,7 +100,7 @@ describeMail("Email integration (Mailpit, local only)", () => {
       .set("Authorization", `Bearer ${reviewerToken}`)
       .send({ submissionId: id, action: "reject", comment: reason });
     expect(rejected.status).toBe(201);
-    const mail = await waitForMail(title, email);
+    const mail = await waitForMail(title, email, reason);
     expect(mail.Text || "").toContain(reason);
   });
 
@@ -153,7 +153,7 @@ describeMail("Email integration (Mailpit, local only)", () => {
       .set("Authorization", `Bearer ${libraryToken}`)
       .send({ submissionId: id, action: "reject", comment: reason });
     expect(rejected.status).toBe(201);
-    const mail = await waitForMail(title, email);
+    const mail = await waitForMail(title, email, reason);
     expect(mail.Text || "").toContain(reason);
     const list = await studentSubmissions(student.token, student.id);
     expect(list.body.find((item: { id: string }) => item.id === id).status).toBe("rejected");
@@ -176,10 +176,24 @@ describeMail("Email integration (Mailpit, local only)", () => {
       .set("Authorization", `Bearer ${directorToken}`)
       .send({ submissionId: id, action: "archive" });
     expect(archived.status).toBe(201);
-    const mail = await waitForMail(title, email);
+    const mail = await waitForMail(title, email, "lưu trữ");
     expect(mail.Text || "").toContain("lưu trữ");
     const list = await studentSubmissions(student.token, student.id);
     expect(list.body.find((item: { id: string }) => item.id === id).status).toBe("archived");
+  });
+
+  it("TC-MAIL-008 notifies Editor with the director return reason", async () => {
+    const { id, title } = await freshSubmission();
+    await http().post("/reviews/action").set("Authorization", `Bearer ${reviewerToken}`)
+      .send({ submissionId: id, action: "approve" });
+    await http().post("/reviews/library-action").set("Authorization", `Bearer ${libraryToken}`)
+      .send({ submissionId: id, action: "approve" });
+    const reason = "Please normalize the keywords before archive";
+    const response = await http().post("/reviews/director-action").set("Authorization", `Bearer ${directorToken}`)
+      .send({ submissionId: id, action: "return_to_editor", comment: reason });
+    expect(response.status).toBe(201);
+    const mail = await waitForMail(title, "library1@hcmut.edu.vn", reason);
+    expect(mail.Subject).toContain("Returned to Editor");
   });
 
   it("TC-MAIL-007 still accepts a submission when SMTP is unreachable", async () => {
@@ -247,14 +261,14 @@ async function messagesTo(address: string, title: string): Promise<MailSummary[]
   return (body.messages || []).filter((message) => addressedTo(message, address));
 }
 
-async function waitForMail(title: string, address: string): Promise<MailSummary> {
+async function waitForMail(title: string, address: string, containsText?: string): Promise<MailSummary> {
   const deadline = Date.now() + 15000;
   while (Date.now() < deadline) {
     const found = await messagesTo(address, title);
-    if (found[0]) {
-      const detail = await fetch(`${MAILPIT}/api/v1/message/${found[0].ID}`);
+    for (const message of found) {
+      const detail = await fetch(`${MAILPIT}/api/v1/message/${message.ID}`);
       const body = (await detail.json()) as { Text?: string };
-      return { ...found[0], Text: body.Text || "" };
+      if (!containsText || body.Text?.includes(containsText)) return { ...message, Text: body.Text || "" };
     }
     await delay(250);
   }

@@ -9,6 +9,8 @@ import { AdminController } from "./admin.controller";
 import { AdminRolesService } from "./admin-roles.service";
 import { AdminSettingsService } from "./admin-settings.service";
 import { AdminUsersService } from "./admin-users.service";
+import { WatermarkAssetsService } from "./watermark-assets.service";
+import { PdfStampingService } from "../reviews/pdf-stamping.service";
 
 @Module({
   imports: [UsersModule, PassportModule.register({ defaultStrategy: "jwt" }), SubmissionFormModule, WorkflowModule],
@@ -17,6 +19,8 @@ import { AdminUsersService } from "./admin-users.service";
     AdminUsersService,
     AdminRolesService,
     AdminSettingsService,
+    PdfStampingService,
+    WatermarkAssetsService,
     JwtAuthGuard,
     PermissionsGuard
   ],

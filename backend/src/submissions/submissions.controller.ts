@@ -1,3 +1,4 @@
+import { ApiBearerAuth } from "@nestjs/swagger";
 import {
   BadRequestException,
   Body,
@@ -5,7 +6,7 @@ import {
   Delete,
   ForbiddenException,
   Get,
-  Param,
+  Param, Query,
   Patch,
   Post,
   Req,
@@ -67,6 +68,7 @@ type UploadedThesisFile = {
   filename: string;
 };
 
+@ApiBearerAuth()
 @Controller("submissions")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class SubmissionsController {
@@ -210,7 +212,22 @@ export class SubmissionsController {
     return this.submissionsService.getStudentSubmissions(studentId);
   }
 
-  @Get(":submissionId/files/:fileId/download")
+  @Get(":submissionId/signature-status")
+  @RequirePermissions(
+    "review_academic",
+    "library_intake",
+    "director_approval",
+    "view_all_submissions",
+    "configure_system",
+  )
+  signatureStatus(@Param("submissionId") submissionId: string) {
+    return this.submissionsService.getSignatureStatus(submissionId);
+  }
+
+  @Get([
+    ":submissionId/files/:fileId/download",
+    ":submissionId/files/:fileId/:fileName",
+  ])
   @RequirePermissions(
     "submit_thesis",
     "review_academic",
@@ -223,17 +240,22 @@ export class SubmissionsController {
     @Req() req: { user: JwtPayload },
     @Param("submissionId") submissionId: string,
     @Param("fileId") fileId: string,
+    @Query("style") style: string | undefined,
+    @Query("download") download: string | undefined,
   ) {
     const { stream, contentType, fileName } =
       await this.submissionsService.getSubmissionFileStream(
         req.user,
         submissionId,
         fileId,
+        style,
       );
     const encoded = encodeURIComponent(fileName);
+    const asciiFallback = fileName.replace(/[^\x20-\x7E]/g, "_");
+    const dispositionType = download === "1" || download === "true" ? "attachment" : "inline";
     return new StreamableFile(stream, {
       type: contentType,
-      disposition: `inline; filename*=UTF-8''${encoded}`,
+      disposition: `${dispositionType}; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`,
     });
   }
 
@@ -248,14 +270,15 @@ export class SubmissionsController {
     "configure_system",
   )
   async getSubmissionHistory(
+    @Req() req: { user: JwtPayload },
     @Param("submissionId", ParseUUIDPipe) submissionId: string,
   ) {
-    return this.submissionsService.getSubmissionHistory(submissionId);
+    return this.submissionsService.getSubmissionHistory(req.user, submissionId);
   }
 
   @Patch(":id/metadata")
   @UseGuards(JwtAuthGuard, PermissionsGuard)
-  @RequirePermissions("library_intake", "view_all_submissions")
+  @RequirePermissions("library_intake", "director_approval", "view_all_submissions", "configure_system")
   async updateMetadata(
     @Req() req: { user: JwtPayload },
     @Param("id", ParseUUIDPipe) id: string,

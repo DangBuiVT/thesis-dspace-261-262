@@ -26,6 +26,7 @@ export enum ReviewActionType {
   APPROVE = "approve",
   REJECT = "reject",
   ARCHIVE = "archive",
+  RETURN_TO_EDITOR = "return_to_editor",
 }
 
 /**

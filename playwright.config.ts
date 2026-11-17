@@ -20,7 +20,7 @@ export default defineConfig({
     ? undefined
     : [
         {
-          command: "npm run start:dev",
+          command: "node ../playwright/start-test-api.cjs",
           cwd: "backend",
           env: {
             ...process.env,

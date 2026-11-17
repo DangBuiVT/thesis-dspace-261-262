@@ -4,6 +4,7 @@ import { config as loadEnv } from "dotenv";
 import { ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./app.module";
+import { setupSwagger } from "./swagger";
 
 function loadEnvFiles() {
   const candidates = [
@@ -32,6 +33,7 @@ async function bootstrap() {
       transform: true
     })
   );
+  setupSwagger(app);
   await app.listen(port, "0.0.0.0");
 }
 

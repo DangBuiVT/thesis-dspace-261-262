@@ -27,3 +27,6 @@ scripts/out/
 .DS_Store
 Thumbs.db
 *.log
+main2.py
+main1.py
+main.py
