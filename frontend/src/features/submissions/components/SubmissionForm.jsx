@@ -54,6 +54,45 @@ export default function SubmissionForm() {
           <Input />
         </Form.Item>
       ) : null}
+      {isAdminActor && showNative("authorIds") ? (
+        <Form.Item
+          label={t("Authors")}
+          name="authorIds"
+          extra={t(
+            "Search by student name or username. Not filled with the admin account.",
+          )}
+          rules={
+            structuralRequired("authorIds")
+              ? [
+                  {
+                    required: true,
+                    message: t(
+                      "Please search and select at least one student author",
+                    ),
+                  },
+                ]
+              : []
+          }
+        >
+          <Select
+            mode="multiple"
+            showSearch
+            allowClear
+            disabled={isFormReadOnly}
+            placeholder={t("Search by name or username")}
+            filterOption={personOptionFilter}
+            loading={isLoadingStudents}
+            options={studentOptions}
+            maxTagCount="responsive"
+            onChange={handleAdminAuthorsChange}
+            notFoundContent={
+              isLoadingStudents ? t("Loading...") : t("No students found")
+            }
+          />
+        </Form.Item>
+      ) : isAdminActor ? (
+        renderAlternateField("authorIds")
+      ) : null}
       {showNative("archiveFacultyId") ? (
         <Form.Item
           label={t("Faculty")}
@@ -241,45 +280,6 @@ export default function SubmissionForm() {
       ) : null}
 
       <Divider style={{ margin: "8px 0" }} />
-      {isAdminActor && showNative("authorIds") ? (
-        <Form.Item
-          label={t("Authors")}
-          name="authorIds"
-          extra={t(
-            "Search by student name or username. Not filled with the admin account.",
-          )}
-          rules={
-            structuralRequired("authorIds")
-              ? [
-                  {
-                    required: true,
-                    message: t(
-                      "Please search and select at least one student author",
-                    ),
-                  },
-                ]
-              : []
-          }
-        >
-          <Select
-            mode="multiple"
-            showSearch
-            allowClear
-            disabled={isFormReadOnly}
-            placeholder={t("Search by name or username")}
-            filterOption={personOptionFilter}
-            loading={isLoadingStudents}
-            options={studentOptions}
-            maxTagCount="responsive"
-            onChange={handleAdminAuthorsChange}
-            notFoundContent={
-              isLoadingStudents ? t("Loading...") : t("No students found")
-            }
-          />
-        </Form.Item>
-      ) : isAdminActor ? (
-        renderAlternateField("authorIds")
-      ) : null}
       <ThesisMetadataFields />
     </Form>
   );
