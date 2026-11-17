@@ -224,7 +224,10 @@ export class SubmissionsController {
     return this.submissionsService.getSignatureStatus(submissionId);
   }
 
-  @Get(":submissionId/files/:fileId/download")
+  @Get([
+    ":submissionId/files/:fileId/download",
+    ":submissionId/files/:fileId/:fileName",
+  ])
   @RequirePermissions(
     "submit_thesis",
     "review_academic",
@@ -238,6 +241,7 @@ export class SubmissionsController {
     @Param("submissionId") submissionId: string,
     @Param("fileId") fileId: string,
     @Query("style") style: string | undefined,
+    @Query("download") download: string | undefined,
   ) {
     const { stream, contentType, fileName } =
       await this.submissionsService.getSubmissionFileStream(
@@ -247,9 +251,11 @@ export class SubmissionsController {
         style,
       );
     const encoded = encodeURIComponent(fileName);
+    const asciiFallback = fileName.replace(/[^\x20-\x7E]/g, "_");
+    const dispositionType = download === "1" || download === "true" ? "attachment" : "inline";
     return new StreamableFile(stream, {
       type: contentType,
-      disposition: `inline; filename*=UTF-8''${encoded}`,
+      disposition: `${dispositionType}; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`,
     });
   }
 
@@ -272,7 +278,7 @@ export class SubmissionsController {
 
   @Patch(":id/metadata")
   @UseGuards(JwtAuthGuard, PermissionsGuard)
-  @RequirePermissions("library_intake", "view_all_submissions")
+  @RequirePermissions("library_intake", "director_approval", "view_all_submissions", "configure_system")
   async updateMetadata(
     @Req() req: { user: JwtPayload },
     @Param("id", ParseUUIDPipe) id: string,

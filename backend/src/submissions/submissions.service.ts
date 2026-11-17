@@ -200,7 +200,11 @@ export class SubmissionsService {
   private assertPeriodMatchesStudentFaculty(
     student: { facultyId: string | null },
     periodFacultyId: string,
+    actor?: JwtPayload,
   ) {
+    if (actor && this.isAdminActor(actor)) {
+      return;
+    }
     if (!student.facultyId) {
       throw new BadRequestException(
         "This student is not assigned to a faculty",
@@ -906,12 +910,14 @@ export class SubmissionsService {
       if (dto.studentId && dto.studentId !== row.student_id) {
         throw new BadRequestException("Cannot change the submitting student");
       }
-      await this.assertStudentSubmissionAction(
-        client,
-        submissionId,
-        row.student_id,
-        "edit",
-      );
+      if (!this.isAdminActor(actor)) {
+        await this.assertStudentSubmissionAction(
+          client,
+          submissionId,
+          row.student_id,
+          "edit",
+        );
+      }
 
       const student = await this.usersService.findById(row.student_id);
       if (!student) {
@@ -1679,12 +1685,16 @@ export class SubmissionsService {
         throw new NotFoundException("Submission not found");
       }
       this.assertCanSubmitForStudent(actor, row.student_id);
-      const { status } = await this.assertStudentSubmissionAction(
-        client,
-        submissionId,
-        row.student_id,
-        "revert_draft",
-      );
+      let status = row.status;
+      if (!this.isAdminActor(actor)) {
+        const actionResult = await this.assertStudentSubmissionAction(
+          client,
+          submissionId,
+          row.student_id,
+          "revert_draft",
+        );
+        status = actionResult.status;
+      }
 
       await client.query(
         `UPDATE submissions SET status = 'draft' WHERE id = $1::uuid`,
@@ -2340,9 +2350,19 @@ export class SubmissionsService {
     return result.rows;
   }
 
-  async updateMetadata(user: JwtPayload, submissionId: string, dto: UpdateMetadataDto) {
-    if (user.role !== WorkflowRole.LIBRARY_STAFF && user.role !== WorkflowRole.ADMIN) {
-      throw new ForbiddenException("Only library staff can edit metadata");
+  async updateMetadata(
+    user: JwtPayload,
+    submissionId: string,
+    dto: UpdateMetadataDto,
+  ) {
+    if (
+      user.role !== WorkflowRole.LIBRARY_STAFF &&
+      user.role !== WorkflowRole.DIRECTOR &&
+      user.role !== WorkflowRole.ADMIN
+    ) {
+      throw new ForbiddenException(
+        "Only Library Staff, Director, or Admin have permission to compile metadata",
+      );
     }
     const fieldMap: Record<string, string> = {
       titleVi: "title_vi", titleEn: "title_en", abstract: "abstract", keywords: "keywords",
@@ -2360,9 +2380,16 @@ export class SubmissionsService {
       );
       const row = result.rows[0];
       if (!row) throw new NotFoundException("Submission not found");
-      if (row.status !== SubmissionStatus.REVIEWING || row.active_role !== WorkflowRole.LIBRARY_STAFF) {
-        throw new BadRequestException("This submission is not waiting for the Editor");
+      const isDirector = user.role === WorkflowRole.DIRECTOR;
+      const isLibraryOrAdmin = user.role === WorkflowRole.LIBRARY_STAFF || user.role === WorkflowRole.ADMIN;
+      const canEdit =
+        (isLibraryOrAdmin && row.status === SubmissionStatus.REVIEWING) ||
+        (isDirector && (row.status === SubmissionStatus.APPROVED || row.status === SubmissionStatus.REVIEWING)) ||
+        user.role === WorkflowRole.ADMIN;
+      if (!canEdit) {
+        throw new BadRequestException("This submission is not waiting for metadata compilation or director approval");
       }
+
       const updates: Record<string, string> = {};
       for (const [key, value] of Object.entries(dto)) {
         if (value == null || key === "comment") continue;
