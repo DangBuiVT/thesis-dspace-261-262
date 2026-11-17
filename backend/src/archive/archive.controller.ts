@@ -52,7 +52,7 @@ export class ArchiveController {
   @Get("admin/faculties/:facultyId/semesters")
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles("admin")
-  listAllSemesters(@Param("facultyId", ParseUUIDPipe) facultyId: string) {
+  listAdminSemesters(@Param("facultyId", ParseUUIDPipe) facultyId: string) {
     return this.submissionPeriodsService.listAllSemestersForAdmin(facultyId);
   }
 

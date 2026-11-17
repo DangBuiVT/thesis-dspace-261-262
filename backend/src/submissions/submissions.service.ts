@@ -1014,7 +1014,6 @@ export class SubmissionsService {
           draftAdminOptions,
           student,
           periodContext.facultyId,
-          actor,
         );
       }
 
@@ -1347,7 +1346,6 @@ export class SubmissionsService {
           adminOptions,
           student,
           periodContext.facultyId,
-          actor,
         );
       }
       await this.applyAdminFacultyOverride(

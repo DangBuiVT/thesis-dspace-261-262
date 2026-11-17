@@ -650,7 +650,6 @@ export class ReviewsService {
     if (dto.action === ReviewActionType.RETURN_TO_EDITOR && !returnReason) {
       throw new BadRequestException("Return reason is required");
     }
-    }
 
     const client = await this.db.connect();
     try {
