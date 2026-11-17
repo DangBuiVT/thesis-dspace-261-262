@@ -187,7 +187,7 @@ export function useSubmissionMutations({
             : "Unable to submit thesis",
         );
       }
-      if (!Array.isArray(record.files) || record.files.length === 0) {
+      if (structuralRequired("thesisFile") && (!Array.isArray(record.files) || record.files.length === 0)) {
         throw new Error(
           "Please edit the draft and upload a thesis PDF before submitting",
         );
@@ -198,23 +198,23 @@ export function useSubmissionMutations({
       const reviewerIds = Array.isArray(record.reviewer_user_ids)
         ? record.reviewer_user_ids
         : [];
-      if (!record.title_vi?.trim()) {
+      if (structuralRequired("titleVi") && !record.title_vi?.trim()) {
         throw new Error(
           "Vietnamese thesis title is required — edit the draft first",
         );
       }
-      if (!(record.title_en || record.title)?.trim()) {
+      if (structuralRequired("titleEn") && !(record.title_en || record.title)?.trim()) {
         throw new Error(
           "English thesis title is required — edit the draft first",
         );
       }
-      if (!record.thesis_advisors?.trim()) {
+      if (structuralRequired("thesisAdvisors") && !record.thesis_advisors?.trim()) {
         throw new Error("Advisor(s) is required — edit the draft first");
       }
-      if (!record.major?.trim()) {
+      if (structuralRequired("major") && !record.major?.trim()) {
         throw new Error("Major is required — edit the draft first");
       }
-      if (!record.thesis_year) {
+      if (structuralRequired("thesisYear") && !record.thesis_year) {
         throw new Error("Year is required — edit the draft first");
       }
       for (const field of configurableFormFields) {
@@ -243,12 +243,12 @@ export function useSubmissionMutations({
           );
         }
       }
-      if (!record.submission_period_id) {
+      if (structuralRequired("submissionPeriodId") && !record.submission_period_id) {
         throw new Error(
           t("Submission period is required — edit the draft first"),
         );
       }
-      if (reviewerIds.length === 0) {
+      if (structuralRequired("reviewerIds") && reviewerIds.length === 0) {
         throw new Error(
           "Please select at least one reviewer — edit the draft first",
         );
@@ -256,9 +256,10 @@ export function useSubmissionMutations({
       const formData = buildSubmissionFormData(
         {
           studentId: ownerId,
-          email: record.student_email || resolveStudentEmail(ownerId),
+          ...(record.extra_metadata || {}),
+          email: record.student_email ?? resolveStudentEmail(ownerId),
           titleVi: record.title_vi,
-          titleEn: record.title_en || record.title,
+          titleEn: record.title_en ?? record.title,
           thesisAdvisors: record.thesis_advisors,
           major: record.major,
           thesisYear: record.thesis_year,
@@ -272,6 +273,8 @@ export function useSubmissionMutations({
           authorIds: authorIds.length > 0 ? authorIds : [ownerId],
           reviewerIds,
           submissionPeriodId: record.submission_period_id,
+          archiveFacultyId: record.faculty_id,
+          archiveSemesterId: record.semester_id,
           thesisFile: [],
         },
         { requireThesisFile: false },

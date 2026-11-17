@@ -21,7 +21,20 @@ export function useSubmissionLifecycle({
   loadSubmissionFormFields,
   applyFormFieldDefaults,
 }) {
-  // Queues follow permissions (from /auth/me), so a role with several grants sees every queue it may act on.
+  useEffect(() => {
+    if (!auth?.token) return;
+    const reload = () => void loadSubmissionFormFields(auth.token);
+    const visible = () => { if (document.visibilityState === "visible") reload(); };
+    if (!["student", "admin"].includes(auth.user.role)) reload();
+    window.addEventListener("focus", reload);
+    window.addEventListener("submission-form-updated", reload);
+    document.addEventListener("visibilitychange", visible);
+    return () => {
+      window.removeEventListener("focus", reload);
+      window.removeEventListener("submission-form-updated", reload);
+      document.removeEventListener("visibilitychange", visible);
+    };
+  }, [auth]);
   useEffect(() => {
     const user = auth?.user;
     if (!user) {

@@ -22,6 +22,9 @@ export function useFormFieldManagement({
       inputType: "text",
       required: false,
       enabled: true,
+      mode: "optional",
+      sectionKey: "metadata",
+      helpText: "",
       storage: "extra",
       dspacePath: "",
       defaultValue: "",
@@ -39,6 +42,9 @@ export function useFormFieldManagement({
       inputType: record.inputType,
       required: record.required,
       enabled: record.enabled,
+      mode: record.mode,
+      sectionKey: record.sectionKey,
+      helpText: record.helpText,
       sortOrder: record.sortOrder,
       defaultValue: record.defaultValue,
       optionsText: (record.options || [])
@@ -72,8 +78,9 @@ export function useFormFieldManagement({
           label: values.label,
           dspacePath: values.dspacePath || "",
           inputType: values.inputType,
-          required: Boolean(values.required),
-          enabled: Boolean(values.enabled),
+          mode: values.mode,
+          sectionKey: values.sectionKey,
+          helpText: values.helpText || "",
           sortOrder: Number(values.sortOrder) || 0,
           defaultValue: values.defaultValue || "",
           options,
@@ -106,8 +113,9 @@ export function useFormFieldManagement({
             label: values.label,
             dspacePath: values.dspacePath || "",
             inputType: values.inputType,
-            required: Boolean(values.required),
-            enabled: Boolean(values.enabled),
+            mode: values.mode,
+            sectionKey: values.sectionKey,
+            helpText: values.helpText || "",
             defaultValue: values.defaultValue || "",
             storage: "extra",
             options,
@@ -121,6 +129,7 @@ export function useFormFieldManagement({
       }
       setFormFieldModalOpen(false);
       await loadFormFields();
+      window.dispatchEvent(new Event("submission-form-updated"));
     } catch (error) {
       message.error(tr(error.message));
     } finally {
@@ -143,6 +152,7 @@ export function useFormFieldManagement({
         throw new Error(payload?.message || "Unable to update field");
       }
       await loadFormFields();
+      window.dispatchEvent(new Event("submission-form-updated"));
     } catch (error) {
       message.error(tr(error.message));
     }

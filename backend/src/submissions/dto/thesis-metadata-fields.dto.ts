@@ -4,6 +4,14 @@ import { IsArray, IsIn, IsObject, IsOptional, IsString } from "class-validator";
 export class ThesisMetadataFieldsDto {
   @IsOptional()
   @IsString()
+  archiveFacultyId?: string;
+
+  @IsOptional()
+  @IsString()
+  archiveSemesterId?: string;
+
+  @IsOptional()
+  @IsString()
   email?: string;
 
   @IsOptional()

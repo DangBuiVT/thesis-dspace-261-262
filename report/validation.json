@@ -1,0 +1,19 @@
+{
+  "revisionDate": "2026-11-05",
+  "base": "4f7a73df",
+  "head": "3d97faf3",
+  "sourceBytes": 77687,
+  "bodyChapters": 7,
+  "appendices": 1,
+  "labels": 21,
+  "bibliographyItems": 12,
+  "sourceChecks": "passed",
+  "applicationTestsRerunForReportEdit": false,
+  "pdfPages": 41,
+  "pdfBytes": 628787,
+  "visualReview": "Passed: all 41 pages reviewed in contact sheets, critical pages inspected individually, revised pages re-rendered",
+  "missingReferencesOrCitations": 0,
+  "overfullBoxes": 0,
+  "sourceSha256": "c26be8802ad72fb3f279e90a3efb4b3149e672c32f2a8fecfc8831e72ddeddf0",
+  "pdfSha256": "7a077b53cb6590fb07108a745f8dde732560b689dd4ca651f3ca4155f88bb769"
+}

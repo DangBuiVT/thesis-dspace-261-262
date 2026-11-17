@@ -35,8 +35,20 @@ export class UpdateFormFieldDto {
   dspacePath?: string;
 
   @IsOptional()
-  @IsIn(["text", "textarea", "select", "year", "file"])
-  inputType?: "text" | "textarea" | "select" | "year" | "file";
+  @IsIn(["text", "textarea", "select", "checkboxes", "year", "file"])
+  inputType?: "text" | "textarea" | "select" | "checkboxes" | "year" | "file";
+
+  @IsOptional()
+  @IsIn(["mandatory", "optional", "hidden"])
+  mode?: "mandatory" | "optional" | "hidden";
+
+  @IsOptional()
+  @IsIn(["checklist", "metadata"])
+  sectionKey?: string;
+
+  @IsOptional()
+  @IsString()
+  helpText?: string;
 
   @IsOptional()
   @IsBoolean()

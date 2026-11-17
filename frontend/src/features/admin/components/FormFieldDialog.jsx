@@ -1,4 +1,4 @@
-import { Modal, Form, Input, Select, Switch } from "antd";
+import { Modal, Form, Input, Select } from "antd";
 import { useAdmin } from "../AdminContext";
 export default function FormFieldDialog() {
   const {
@@ -36,7 +36,7 @@ export default function FormFieldDialog() {
           }
         >
           <Input
-            disabled={Boolean(editingFormField?.systemLocked)}
+            disabled={Boolean(editingFormField?.systemLocked || editingFormField?.questionNumber)}
             placeholder="myCustomField"
           />
         </Form.Item>
@@ -64,6 +64,7 @@ export default function FormFieldDialog() {
               { value: "text", label: t("Text") },
               { value: "textarea", label: t("Textarea") },
               { value: "select", label: t("Select") },
+              { value: "checkboxes", label: t("Checkboxes") },
               { value: "year", label: t("Year") },
               { value: "file", label: t("File") },
             ]}
@@ -87,19 +88,12 @@ export default function FormFieldDialog() {
             <Input type="number" />
           </Form.Item>
         ) : null}
-        <Form.Item
-          name="required"
-          label={t("Required")}
-          valuePropName="checked"
-        >
-          <Switch />
+        <Form.Item name="sectionKey" label={t("Form step")}>
+          <Select options={[{ value: "checklist", label: t("Submission checklist") }, { value: "metadata", label: t("Thesis information") }]} />
         </Form.Item>
-        <Form.Item
-          name="enabled"
-          label={t("Enabled on form")}
-          valuePropName="checked"
-        >
-          <Switch />
+        <Form.Item name="helpText" label={t("Help text")}><Input.TextArea rows={3} /></Form.Item>
+        <Form.Item name="mode" label={t("Question mode")} rules={[{ required: true }]}>
+          <Select options={["mandatory", "optional", "hidden"].map(value => ({ value, label: t(value) }))} />
         </Form.Item>
       </Form>
     </Modal>

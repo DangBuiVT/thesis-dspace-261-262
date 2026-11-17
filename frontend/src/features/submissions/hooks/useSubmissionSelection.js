@@ -5,6 +5,7 @@ import {
   DEFAULT_PUBLISHER,
   OTHER_FACULTY_VALUE,
   WORKFLOW_STEP_FIELDS,
+  decodeFormAnswer,
 } from "../model/formConfig.js";
 import { getStoredSignatureStyle } from "../../../shared/signature.js";
 import { isSubmissionSubmitter } from "../model/access.js";
@@ -24,6 +25,7 @@ export function useSubmissionSelection({
   showNative,
   structuralRequired,
   configurableFormFields,
+  structuralField,
   t,
   thesisMaxFileSizeMb,
   setAdminSubmissionModalOpen,
@@ -55,7 +57,7 @@ export function useSubmissionSelection({
     submissionForm.setFieldsValue({
       studentId,
       email,
-      authorIds: undefined,
+      authorIds: studentId ? [studentId] : undefined,
       archiveFacultyId: undefined,
       archiveSemesterId: undefined,
       submissionPeriodId: undefined,
@@ -64,6 +66,7 @@ export function useSubmissionSelection({
     setArchiveSemesters([]);
     setArchivePeriods([]);
     if (studentId) {
+      applyStudentFaculty(studentId);
       void loadStudentSubmissions(studentId);
     } else {
       setStudentSubmissions([]);
@@ -142,13 +145,6 @@ export function useSubmissionSelection({
     }
     if (
       authorsNative &&
-      structuralRequired("authorIds") &&
-      authorIds.length === 0
-    ) {
-      throw new Error("Please search and select at least one student author");
-    }
-    if (
-      authorsNative &&
       authorIds.length > 0 &&
       !authorIds.includes(studentId)
     ) {
@@ -159,33 +155,15 @@ export function useSubmissionSelection({
     formData.append("studentId", studentId);
     formData.append(
       "email",
-      (values.email || resolveStudentEmail(studentId)).trim(),
+      structuralField("email")?.enabled ? String(values.email ?? resolveStudentEmail(studentId)).trim() : "",
     );
-    if (values.titleVi?.trim()) {
-      formData.append("titleVi", values.titleVi.trim());
-    }
-    if (values.titleEn?.trim()) {
-      formData.append("titleEn", values.titleEn.trim());
-    }
-    if (values.thesisAdvisors?.trim()) {
-      formData.append("thesisAdvisors", values.thesisAdvisors.trim());
-    }
-    if (values.major?.trim()) {
-      formData.append("major", values.major.trim());
-    }
-    if (values.thesisYear) {
-      formData.append("thesisYear", String(values.thesisYear).trim());
+    for (const key of ["titleVi", "titleEn", "thesisAdvisors", "major", "thesisYear", "archiveFacultyId", "archiveSemesterId"]) {
+      if (structuralField(key)?.enabled) formData.append(key, String(values[key] ?? "").trim());
     }
     const metadata = {};
     for (const field of configurableFormFields) {
       const raw = values[field.fieldKey];
-      if (raw == null) {
-        continue;
-      }
-      const text = String(raw).trim();
-      if (!text) {
-        continue;
-      }
+      const text = field.inputType === "checkboxes" ? JSON.stringify(Array.isArray(raw) ? raw : decodeFormAnswer(field, raw)) : String(raw ?? "").trim();
       metadata[field.fieldKey] = text;
       if (
         field.fieldKey === "dateIssued" ||
@@ -226,13 +204,13 @@ export function useSubmissionSelection({
       metadata.thesisFile = values.thesisFile.trim();
     }
     formData.append("metadata", JSON.stringify(metadata));
-    formData.append("authorIds", JSON.stringify(authorIds));
+    formData.append("authorIds", JSON.stringify(authorIds.length ? authorIds : [studentId]));
     formData.append("reviewerIds", JSON.stringify(reviewerIds));
     const adminOtherFaculty =
       auth.user.role === "admin" &&
       values.archiveFacultyId === OTHER_FACULTY_VALUE;
-    if (values.submissionPeriodId && !adminOtherFaculty) {
-      formData.append("submissionPeriodId", values.submissionPeriodId);
+    if (structuralField("submissionPeriodId")?.enabled && !adminOtherFaculty) {
+      formData.append("submissionPeriodId", values.submissionPeriodId || "");
     }
     if (auth.user.role === "admin") {
       // Admin overrides: faculty of this submission and the review steps that stay enabled.
@@ -257,7 +235,7 @@ export function useSubmissionSelection({
         formData.append("signatureStyle", signatureStyle);
       }
     }
-    const thesisFile = values.thesisFile?.[0]?.originFileObj;
+    const thesisFile = showNative("thesisFile") ? values.thesisFile?.[0]?.originFileObj : undefined;
     if (thesisFile) {
       if (!validateThesisPdf(thesisFile, t, thesisMaxFileSizeMb)) {
         return null;
@@ -335,7 +313,7 @@ export function useSubmissionSelection({
     const reviewerIds = Array.isArray(record.reviewer_user_ids)
       ? record.reviewer_user_ids
       : [];
-    const facultyId = record.faculty_id || undefined;
+    const facultyId = record.faculty_id || (record.extra_metadata?.facultyOtherName ? OTHER_FACULTY_VALUE : undefined);
     const semesterId = record.semester_id || undefined;
     const periodId = record.submission_period_id || undefined;
     const semesterLabel = record.semester_name || semesterId;
@@ -361,7 +339,7 @@ export function useSubmissionSelection({
       ];
     };
 
-    if (facultyId) {
+    if (facultyId && facultyId !== OTHER_FACULTY_VALUE) {
       setArchiveFaculties((prev) => {
         if (prev.some((item) => item.value === facultyId)) {
           return prev;
@@ -382,13 +360,15 @@ export function useSubmissionSelection({
       setArchivePeriods((prev) => withSavedPeriod(prev));
     }
 
+    const fields = await loadSubmissionFormFields(auth.token);
+    const savedAnswers = Object.fromEntries(fields.map(field => [field.fieldKey, decodeFormAnswer(field, record.extra_metadata?.[field.fieldKey])]));
     submissionForm.setFieldsValue({
-      email: record.student_email || resolveStudentEmail(recordStudentId),
+      email: record.student_email ?? resolveStudentEmail(recordStudentId),
       titleVi: record.title_vi || "",
-      titleEn: record.title_en || record.title || "",
+      titleEn: record.title_en ?? record.title ?? "",
       thesisAdvisors: record.thesis_advisors || "",
       major: record.major || "",
-      thesisYear: record.thesis_year || String(new Date().getFullYear()),
+      thesisYear: record.thesis_year ?? "",
       dateIssued:
         record.date_issued ||
         record.thesis_year ||
@@ -399,9 +379,8 @@ export function useSubmissionSelection({
       language: record.language || "vie",
       description: record.description || "",
       abstract: record.abstract || "",
-      ...(record.extra_metadata && typeof record.extra_metadata === "object"
-        ? record.extra_metadata
-        : {}),
+      ...(record.extra_metadata || {}),
+      ...Object.fromEntries(Object.entries(savedAnswers).filter(([, value]) => value !== undefined)),
       authorIds:
         authorIds.length > 0
           ? authorIds
@@ -409,12 +388,11 @@ export function useSubmissionSelection({
             ? [recordStudentId]
             : undefined,
       reviewerIds,
-      archiveFacultyId: facultyId,
-      archiveSemesterId: semesterId,
+      archiveFacultyId: record.extra_metadata?.archiveFacultyId ?? facultyId,
+      archiveSemesterId: record.extra_metadata?.archiveSemesterId ?? semesterId,
       submissionPeriodId: periodId,
       thesisFile: thesisFileListFromRecord(record),
     });
-    void loadSubmissionFormFields(auth.token);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 

@@ -98,6 +98,12 @@ export class SubmissionsController {
     return this.formFieldsService.listEnabled();
   }
 
+  @Get("form-schema")
+  @RequirePermissions("submit_thesis", "review_academic", "library_intake", "director_approval", "view_all_submissions", "configure_system")
+  formSchema() {
+    return this.formFieldsService.schema();
+  }
+
   @Get("upload-limit")
   @RequirePermissions("submit_thesis", "configure_system")
   uploadLimit() {

@@ -52,6 +52,7 @@ const INPUT_TYPE_KEYS = {
   text: "Text",
   textarea: "Textarea",
   select: "Select",
+  checkboxes: "Checkboxes",
   year: "Year",
   file: "File"
 };
@@ -103,11 +104,7 @@ export function roleText(role, t) {
 }
 
 export function fieldDisplayLabel(field, t) {
-  const key = FIELD_KEYS[field?.fieldKey];
-  if (key) {
-    return t(key);
-  }
-  return field?.label || "";
+  return t(field?.label || FIELD_KEYS[field?.fieldKey] || "");
 }
 
 export function optionDisplayLabel(option, t) {

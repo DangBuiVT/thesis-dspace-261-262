@@ -1,4 +1,6 @@
 import type { Pool } from "pg";
+import { readFile } from "node:fs/promises";
+import * as path from "node:path";
 
 const STRUCTURAL_FIELDS: Array<{
   id: string;
@@ -147,7 +149,7 @@ export async function ensurePortalSchema(db: Pool) {
   await db.query(`
     ALTER TABLE submission_form_fields
     ADD CONSTRAINT submission_form_fields_input_type_check
-    CHECK (input_type IN ('text', 'textarea', 'select', 'year', 'file'))
+    CHECK (input_type IN ('text', 'textarea', 'select', 'checkboxes', 'year', 'file'))
   `);
 
   const existing = await db.query<{ count: string }>(`SELECT COUNT(*)::text AS count FROM workflow_steps`);
@@ -172,4 +174,5 @@ export async function ensurePortalSchema(db: Pool) {
   }
 
   await db.query(`UPDATE submission_form_fields SET system_locked = FALSE`);
+  await db.query(await readFile(path.join(process.cwd(), "migrations", "003_submission_form.sql"), "utf8"));
 }

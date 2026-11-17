@@ -14,7 +14,12 @@ export type SubmissionFormField = {
   fieldKey: string;
   label: string;
   dspacePath: string;
-  inputType: "text" | "textarea" | "select" | "year" | "file";
+  inputType: "text" | "textarea" | "select" | "checkboxes" | "year" | "file";
+  mode: "mandatory" | "optional" | "hidden";
+  sectionKey: string;
+  questionNumber: number | null;
+  helpText: string;
+  validation: { allOptions?: boolean };
   required: boolean;
   enabled: boolean;
   sortOrder: number;
@@ -67,6 +72,13 @@ export class SubmissionFormFieldsService {
     return result.rows.map((row) => this.mapRow(row));
   }
 
+  async schema() {
+    const sections = await this.db.query(
+      `SELECT key, title, description, sort_order AS "sortOrder" FROM submission_form_sections ORDER BY sort_order`
+    );
+    return { sections: sections.rows, fields: await this.listAll() };
+  }
+
   async fieldState(
     fieldKey: string
   ): Promise<{ enabled: boolean; required: boolean; inputType: string } | null> {
@@ -107,9 +119,9 @@ export class SubmissionFormFieldsService {
     await this.db.query(
       `INSERT INTO submission_form_fields (
          id, field_key, label, dspace_path, input_type, required, enabled, sort_order,
-         options, default_value, storage, column_name, system_locked
+         options, default_value, storage, column_name, system_locked, section_key, help_text
        ) VALUES (
-         $1::uuid, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, FALSE
+         $1::uuid, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, FALSE, $13, $14
        )`,
       [
         id,
@@ -117,13 +129,15 @@ export class SubmissionFormFieldsService {
         dto.label.trim(),
         (dto.dspacePath || "").trim(),
         dto.inputType || "text",
-        dto.required === true,
-        dto.enabled !== false,
+        dto.mode ? dto.mode === "mandatory" : dto.required === true,
+        dto.mode ? dto.mode !== "hidden" : dto.enabled !== false,
         sortOrder,
         JSON.stringify(dto.options || []),
         (dto.defaultValue || "").trim(),
         storage,
-        columnName
+        columnName,
+        dto.sectionKey || "metadata",
+        dto.helpText || ""
       ]
     );
     return this.getById(id);
@@ -131,6 +145,24 @@ export class SubmissionFormFieldsService {
 
   async update(fieldId: string, dto: UpdateFormFieldDto): Promise<SubmissionFormField> {
     const existing = await this.getById(fieldId);
+
+    if (dto.fieldKey !== undefined && this.normalizeKey(dto.fieldKey) !== existing.fieldKey &&
+        (existing.questionNumber || STRUCTURAL_FORM_KEYS.has(existing.fieldKey))) {
+      throw new BadRequestException("Built-in question keys cannot change; use mode=hidden to hide a question");
+    }
+    // Update both flags together so hidden -> optional never retains a required flag.
+    if (dto.mode !== undefined) {
+      await this.db.query(
+        `UPDATE submission_form_fields SET required = $1, enabled = $2, updated_at = NOW() WHERE id = $3::uuid`,
+        [dto.mode === "mandatory", dto.mode !== "hidden", fieldId]
+      );
+    }
+    for (const [key, column] of [["sectionKey", "section_key"], ["helpText", "help_text"]] as const) {
+      if (dto[key] !== undefined) {
+        await this.db.query(`UPDATE submission_form_fields SET ${column} = $1, updated_at = NOW() WHERE id = $2::uuid`,
+          [dto[key], fieldId]);
+      }
+    }
 
     if (dto.label !== undefined) {
       await this.db.query(`UPDATE submission_form_fields SET label = $1, updated_at = NOW() WHERE id = $2::uuid`, [
@@ -150,13 +182,13 @@ export class SubmissionFormFieldsService {
         [dto.inputType, fieldId]
       );
     }
-    if (dto.required !== undefined) {
+    if (dto.mode === undefined && dto.required !== undefined) {
       await this.db.query(
         `UPDATE submission_form_fields SET required = $1, updated_at = NOW() WHERE id = $2::uuid`,
         [dto.required, fieldId]
       );
     }
-    if (dto.enabled !== undefined) {
+    if (dto.mode === undefined && dto.enabled !== undefined) {
       await this.db.query(
         `UPDATE submission_form_fields SET enabled = $1, updated_at = NOW() WHERE id = $2::uuid`,
         [dto.enabled, fieldId]
@@ -196,7 +228,10 @@ export class SubmissionFormFieldsService {
   }
 
   async remove(fieldId: string) {
-    await this.getById(fieldId);
+    const field = await this.getById(fieldId);
+    if (field.questionNumber || STRUCTURAL_FORM_KEYS.has(field.fieldKey)) {
+      throw new BadRequestException("Built-in questions cannot be deleted; use mode=hidden");
+    }
     await this.db.query(`DELETE FROM submission_form_fields WHERE id = $1::uuid`, [fieldId]);
     return { deleted: true, id: fieldId };
   }
@@ -216,12 +251,42 @@ export class SubmissionFormFieldsService {
     const extra: Record<string, string> = { ...(options.existingExtra || {}) };
 
     for (const field of fields) {
+      if (["archiveFacultyId", "archiveSemesterId"].includes(field.fieldKey)) {
+        if (input[field.fieldKey] !== undefined) extra[field.fieldKey] = String(input[field.fieldKey] ?? "").trim();
+        continue;
+      }
       // author/title are owned by workflow (authorIds / titleEn); skip form value overwrite here
       if (field.fieldKey === "author" || field.fieldKey === "title" || STRUCTURAL_FORM_KEYS.has(field.fieldKey)) {
         continue;
       }
 
-      const raw = input[field.fieldKey];
+      const raw = input[field.fieldKey] === undefined
+        ? options.existingExtra?.[field.fieldKey]
+        : input[field.fieldKey];
+      if (field.inputType === "checkboxes") {
+        let selected: unknown = raw;
+        if (typeof selected === "string") {
+          try { selected = JSON.parse(selected); } catch {
+            throw new BadRequestException(`${field.label} must be a list of options`);
+          }
+        }
+        if (selected == null || selected === "") selected = [];
+        if (!Array.isArray(selected) || selected.some(value => typeof value !== "string")) {
+          throw new BadRequestException(`${field.label} must be a list of options`);
+        }
+        const values = [...new Set(selected as string[])];
+        if (values.some(value => !field.options.some(option => option.value === value))) {
+          throw new BadRequestException(`${field.label} contains an invalid option`);
+        }
+        if (options.required && field.required && !values.length) {
+          throw new BadRequestException(`${field.label} is required`);
+        }
+        if (options.required && field.validation.allOptions && values.length > 0 && values.length !== field.options.length) {
+          throw new BadRequestException(`${field.label}: select all ${field.options.length} components`);
+        }
+        if (raw !== undefined) extra[field.fieldKey] = JSON.stringify(values);
+        continue;
+      }
       const value =
         raw === undefined || raw === null
           ? ""
@@ -236,6 +301,10 @@ export class SubmissionFormFieldsService {
       }
 
       const finalValue = value || (!options.required ? "" : field.defaultValue || "");
+      if (value && field.inputType === "select" && field.options.length &&
+          !field.options.some(option => option.value === value)) {
+        throw new BadRequestException(`${field.label} contains an invalid option`);
+      }
       if (options.required && field.required && !finalValue) {
         throw new BadRequestException(`${field.label} is required`);
       }
@@ -325,6 +394,9 @@ export class SubmissionFormFieldsService {
       .split(/[;|]/)
       .map((part) => part.trim())
       .filter(Boolean);
+    if (fields.some(field => field.fieldKey === "advisor2") && extra.advisor2) {
+      advisors.push(String(extra.advisor2).trim());
+    }
     if (advisors.length > 0) {
       this.appendMetadata(metadata, "dc.contributor.advisor", advisors);
     }
@@ -410,6 +482,11 @@ export class SubmissionFormFieldsService {
       label: String(row.label),
       dspacePath: String(row.dspace_path || ""),
       inputType: row.input_type as SubmissionFormField["inputType"],
+      mode: !row.enabled ? "hidden" : row.required ? "mandatory" : "optional",
+      sectionKey: String(row.section_key || "metadata"),
+      questionNumber: row.question_number == null ? null : Number(row.question_number),
+      helpText: String(row.help_text || ""),
+      validation: (row.validation || {}) as SubmissionFormField["validation"],
       required: Boolean(row.required),
       enabled: Boolean(row.enabled),
       sortOrder: Number(row.sort_order || 0),

@@ -5,14 +5,17 @@ import { useI18n } from "../../../i18n/I18nProvider";
 
 const PdfCanvas = lazy(() => import("./PdfCanvas"));
 
-export default function PdfPreview({ submissionId, files = [], token }) {
+export default function PdfPreview({ submissionId, files = [], token, localFile }) {
   const { t } = useI18n();
   const [selected, setSelected] = useState();
   const [url, setUrl] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [retry, setRetry] = useState(0);
-  const file = files.find((item) => item.id === selected) || files[0];
+  const availableFiles = Array.isArray(files) ? files : [];
+  const file = localFile
+    ? { id: "local", fileName: localFile.name, mimeType: localFile.type }
+    : availableFiles.find((item) => item.id === selected) || availableFiles.find(item => item.fileType === "thesis") || availableFiles[0];
 
   useEffect(() => {
     const controller = new AbortController();
@@ -22,6 +25,12 @@ export default function PdfPreview({ submissionId, files = [], token }) {
     if (!file) {
       setLoading(false);
       return () => controller.abort();
+    }
+    if (localFile) {
+      objectUrl = URL.createObjectURL(localFile);
+      setUrl(objectUrl);
+      setLoading(false);
+      return () => URL.revokeObjectURL(objectUrl);
     }
     setLoading(true);
     requestSubmissionFile(submissionId, file.id, {
@@ -50,7 +59,7 @@ export default function PdfPreview({ submissionId, files = [], token }) {
       controller.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [submissionId, file?.id, token, retry]);
+  }, [submissionId, file?.id, token, retry, localFile]);
 
   if (!file) return <Empty description={t("No files")} />;
   const isPdf =
@@ -62,7 +71,7 @@ export default function PdfPreview({ submissionId, files = [], token }) {
           aria-label={t("Select file")}
           value={file.id}
           onChange={setSelected}
-          options={files.map((item) => ({
+          options={(localFile ? [file] : availableFiles).map((item) => ({
             value: item.id,
             label: item.fileName,
           }))}

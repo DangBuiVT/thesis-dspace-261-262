@@ -21,6 +21,7 @@ import MetadataEditor, { METADATA_FIELDS } from "./MetadataEditor";
 import ApprovalHistory from "./ApprovalHistory";
 import SignatureStatusCard from "./SignatureStatusCard";
 import { stageLabel } from "./TaskQueue";
+import { displayFormAnswer, STRUCTURAL_FORM_KEYS } from "../model/formConfig.js";
 
 export default function ReviewWorkspace({
   submission,
@@ -129,11 +130,11 @@ export default function ReviewWorkspace({
                         ["Type", documentTypeText(record.document_type, t)],
                         ["Submission period", record.period_name],
                         ["Email", record.student_email],
-                        ...Object.entries(record.extra_metadata || {}).map(
+                        ...Object.entries(record.extra_metadata || {}).filter(([key]) => !STRUCTURAL_FORM_KEYS.has(key)).map(
                           ([key, value]) => [
                             fields.find((field) => field.fieldKey === key)
                               ?.label || key,
-                            value,
+                            displayFormAnswer(fields.find(field => field.fieldKey === key), value, t),
                           ],
                         ),
                       ].map(([label, value]) => (

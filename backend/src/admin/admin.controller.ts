@@ -19,6 +19,8 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import { memoryStorage } from "multer";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { RolesGuard } from "../auth/roles.guard";
+import { Roles } from "../auth/roles.decorator";
 import { PermissionsGuard } from "../auth/permissions.guard";
 import { RequirePermissions } from "../auth/permissions.decorator";
 import type { JwtPayload } from "../auth/jwt.strategy";
@@ -153,24 +155,32 @@ export class AdminController {
   }
 
   @Get("submission-form-fields")
+  @UseGuards(RolesGuard)
+  @Roles("admin")
   @RequirePermissions("configure_system")
   listFormFields() {
     return this.formFieldsService.listAll();
   }
 
   @Post("submission-form-fields")
+  @UseGuards(RolesGuard)
+  @Roles("admin")
   @RequirePermissions("configure_system")
   createFormField(@Body() body: CreateFormFieldDto) {
     return this.formFieldsService.create(body);
   }
 
   @Patch("submission-form-fields/:fieldId")
+  @UseGuards(RolesGuard)
+  @Roles("admin")
   @RequirePermissions("configure_system")
   updateFormField(@Param("fieldId") fieldId: string, @Body() body: UpdateFormFieldDto) {
     return this.formFieldsService.update(fieldId, body);
   }
 
   @Delete("submission-form-fields/:fieldId")
+  @UseGuards(RolesGuard)
+  @Roles("admin")
   @RequirePermissions("configure_system")
   deleteFormField(@Param("fieldId") fieldId: string) {
     return this.formFieldsService.remove(fieldId);
