@@ -289,10 +289,16 @@ export class WorkflowMailService {
     reason?: string,
   ): Promise<void> {
     const row = await this.loadSubmission(submissionId);
-    const handleId = row?.dspace_item_id || "123456789/8811";
-    const handleUrl = `https://dspace.tv.hcmut.edu.vn/handle/${handleId}`;
 
     if (decision === "approved") {
+      // Chỉ đưa link handle khi bài đã thực sự có mã định danh DSpace (do dịch vụ xuất bản ghi nhận).
+      const handleId = row?.dspace_item_id || "";
+      const handleUrl = handleId ? `https://dspace.tv.hcmut.edu.vn/handle/${handleId}` : "";
+      const handleBlock = handleUrl
+        ? "\nvà nó đã được gán mã định danh sau:\n" +
+          handleUrl +
+          "\n\nVui lòng sử dụng mã định danh này khi trích dẫn bài nộp của bạn.\n"
+        : "\nMã định danh lưu trữ sẽ được thông báo sau khi bài nộp được xuất bản lên DSpace.\n";
       await this.notifyStudent(submissionId, {
         subjectKey: "email_subject_student_director_decision",
         bodyKey: "email_body_student_director_decision",
@@ -303,9 +309,9 @@ export class WorkflowMailService {
         },
         defaultSubject: "Quy trình chuyển luận văn - Bài nộp đã được chấp nhận",
         defaultBody:
-          "Bạn đã gửi: {{title}}\n\nVề bộ sưu tập: Bài luận văn Thạc sĩ\n\nBài nộp của bạn đã được chấp nhận và lưu trữ trong DSpace tại HCMUT.\nvà nó đã được gán mã định danh sau:\n" +
-          handleUrl +
-          "\n\nVui lòng sử dụng mã định danh này khi trích dẫn bài nộp của bạn.\n\nCảm ơn rất nhiều!\n\nNhóm DSpace tại HCMUT",
+          "Bạn đã gửi: {{title}}\n\nVề bộ sưu tập: Bài luận văn Thạc sĩ\n\nBài nộp của bạn đã được chấp nhận và lưu trữ trong DSpace tại HCMUT.\n" +
+          handleBlock +
+          "\nCảm ơn rất nhiều!\n\nNhóm DSpace tại HCMUT",
       });
       return;
     }
@@ -375,6 +381,19 @@ export class WorkflowMailService {
         "[Cổng luận văn / Thesis Portal] Luận văn sẵn sàng tiếp nhận thư viện | Thesis ready for library intake",
       defaultBody:
         "--- Tiếng Việt ---\nXin chào,\n\nTất cả phản biện học thuật đã duyệt luận văn. Hồ sơ sẵn sàng để thư viện tiếp nhận.\n\nTên đề tài: {{title}}\nSinh viên: {{studentName}}\nTác giả: {{author}}\nKhoa: {{facultyName}}\nHọc kỳ: {{semesterName}}\n\nĐăng nhập để xử lý:\n{{portalUrl}}\n\n--- English ---\nHello,\n\nAll academic reviewers have approved this thesis. It is ready for library intake.\n\nTitle: {{title}}\nStudent: {{studentName}}\nAuthors: {{author}}\nFaculty: {{facultyName}}\nSemester: {{semesterName}}\n\nPlease sign in to process intake:\n{{portalUrl}}\n\n— Cổng luận văn / Thesis Portal",
+    });
+  }
+
+  async notifyLibraryOnDirectorReturn(submissionId: string, reason: string): Promise<void> {
+    const row = await this.loadSubmission(submissionId);
+    if (!row) return;
+    const to = await this.emailsByRole("library_staff");
+    if (!to.length) return;
+    await this.mail.sendTemplated({
+      to, subjectKey: "email_subject_library_returned", bodyKey: "email_body_library_returned",
+      vars: await this.buildVars(row, { reason }),
+      defaultSubject: "[Thesis Portal] Returned to Editor | Yêu cầu thư viện chỉnh sửa",
+      defaultBody: "Title / Đề tài: {{title}}\nReturned to Editor / Trả về thư viện.\nReason / Lý do: {{reason}}\nAcademic approvals are preserved / Giữ nguyên phê duyệt học thuật.\n{{portalUrl}}",
     });
   }
 

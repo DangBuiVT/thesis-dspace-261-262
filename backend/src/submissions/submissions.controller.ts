@@ -1,3 +1,4 @@
+import { ApiBearerAuth } from "@nestjs/swagger";
 import {
   BadRequestException,
   Body,
@@ -67,6 +68,7 @@ type UploadedThesisFile = {
   filename: string;
 };
 
+@ApiBearerAuth()
 @Controller("submissions")
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class SubmissionsController {
@@ -210,6 +212,18 @@ export class SubmissionsController {
     return this.submissionsService.getStudentSubmissions(studentId);
   }
 
+  @Get(":submissionId/signature-status")
+  @RequirePermissions(
+    "review_academic",
+    "library_intake",
+    "director_approval",
+    "view_all_submissions",
+    "configure_system",
+  )
+  signatureStatus(@Param("submissionId") submissionId: string) {
+    return this.submissionsService.getSignatureStatus(submissionId);
+  }
+
   @Get([
     ":submissionId/files/:fileId/download",
     ":submissionId/files/:fileId/:fileName",
@@ -256,9 +270,10 @@ export class SubmissionsController {
     "configure_system",
   )
   async getSubmissionHistory(
+    @Req() req: { user: JwtPayload },
     @Param("submissionId", ParseUUIDPipe) submissionId: string,
   ) {
-    return this.submissionsService.getSubmissionHistory(submissionId);
+    return this.submissionsService.getSubmissionHistory(req.user, submissionId);
   }
 
   @Patch(":id/metadata")

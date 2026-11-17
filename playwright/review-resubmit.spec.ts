@@ -7,7 +7,7 @@ test("E2E-003 reviewer rejects and the student submits again", async ({ page }) 
   const created = await submitViaApi(student, title);
   try {
     await loginUi(page, "reviewer1", "review123");
-    const row = page.getByRole("row", { name: title });
+    const row = page.getByRole("row", { name: title }).first();
     await row.getByRole("button", { name: "Reject" }).click();
     await page.getByRole("dialog").locator("textarea").fill("Please revise the abstract");
     await page.getByRole("dialog").getByRole("button", { name: "Reject" }).click();
@@ -15,7 +15,7 @@ test("E2E-003 reviewer rejects and the student submits again", async ({ page }) 
     await logoutUi(page);
 
     await loginUi(page, student.user.username, student.password);
-    await expect(page.getByText("rejected", { exact: true })).toBeVisible();
+    await expect(page.getByText("Rejected", { exact: true }).first()).toBeVisible();
     await page.getByRole("button", { name: "Edit" }).click();
     await page.getByRole("button", { name: "Submit again" }).click();
     await expect(page.getByText("Thesis updated and submitted for review")).toBeVisible();

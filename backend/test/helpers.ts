@@ -46,8 +46,10 @@ export async function initApi(): Promise<void> {
   const { ValidationPipe } = await import("@nestjs/common");
   const { NestFactory } = await import("@nestjs/core");
   const { AppModule } = await import("../src/app.module");
+  const { setupSwagger } = await import("../src/swagger");
   app = await NestFactory.create(AppModule, { logger: false });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  setupSwagger(app);
   await app.listen(0, "127.0.0.1");
   server = app.getHttpServer();
 }

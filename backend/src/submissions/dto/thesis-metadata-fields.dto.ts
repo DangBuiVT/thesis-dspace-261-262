@@ -1,5 +1,5 @@
 import { Transform } from "class-transformer";
-import { IsObject, IsOptional, IsString } from "class-validator";
+import { IsArray, IsIn, IsObject, IsOptional, IsString } from "class-validator";
 
 export class ThesisMetadataFieldsDto {
   @IsOptional()
@@ -72,4 +72,44 @@ export class ThesisMetadataFieldsDto {
   })
   @IsObject()
   metadata?: Record<string, string>;
+
+  // ── Tuỳ chọn chỉ dành cho Admin khi nộp thay sinh viên ──
+
+  /** Khoa của bài nộp (có thể khác khoa trong hồ sơ sinh viên). */
+  @IsOptional()
+  @IsString()
+  facultyId?: string;
+
+  /** Tên khoa nhập tay khi Admin chọn "Khác". */
+  @IsOptional()
+  @IsString()
+  facultyOtherName?: string;
+
+  /**
+   * Các bước duyệt được bật cho bài nộp này, JSON array con của
+   * ["reviewer","library_staff","director"]. Mảng rỗng = không cần duyệt (tự lưu chiểu + ký số).
+   */
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value == null || value === "") {
+      return undefined;
+    }
+    if (Array.isArray(value)) {
+      return value.map(String);
+    }
+    try {
+      const parsed = JSON.parse(String(value)) as unknown;
+      return Array.isArray(parsed) ? parsed.map(String) : undefined;
+    } catch {
+      return undefined;
+    }
+  })
+  @IsArray()
+  @IsIn(["reviewer", "library_staff", "director"], { each: true })
+  workflowRoles?: string[];
+
+  /** Kiểu chữ ký số dùng khi bài được tự lưu chiểu (không có bước duyệt). */
+  @IsOptional()
+  @IsIn(["margin_strips", "diagonal", "invisible"])
+  signatureStyle?: string;
 }

@@ -1,0 +1,150 @@
+# Deploy readiness for duc-fix-new: every push runs the checks below and the final
+# "Ready to deploy" job is green only when all of them pass.
+name: Deploy check (duc-fix-new)
+
+on:
+  push:
+    branches: [duc-fix-new]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-check-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "22" # same as the node:22-alpine Docker images
+
+jobs:
+  backend:
+    name: Backend build + API tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: thesis_portal
+          POSTGRES_USER: thesis_user
+          POSTGRES_PASSWORD: thesis_pass
+        # Tests default to port 5433 (the docker-compose host port).
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U thesis_user -d thesis_portal"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - name: Type-check and build
+        run: npm run build
+      - name: API e2e tests (thesis_test database)
+        run: npm run test:e2e
+      - name: Upload API test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-test-report
+          path: frontend/docs/evidence/api-report.md
+          if-no-files-found: ignore
+
+  frontend:
+    name: Frontend architecture + build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Architecture rules
+        run: npm run check:architecture
+      - name: Production build
+        run: npm run build
+
+  ui-e2e:
+    name: UI e2e (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: thesis_portal
+          POSTGRES_USER: thesis_user
+          POSTGRES_PASSWORD: thesis_pass
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U thesis_user -d thesis_portal"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            frontend/package-lock.json
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix backend
+          npm ci --prefix frontend
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Playwright tests
+        run: npx playwright test
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: test-results/
+          retention-days: 7
+
+  ready:
+    name: Ready to deploy
+    if: always()
+    needs: [backend, frontend, ui-e2e]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summarise
+        env:
+          BACKEND: ${{ needs.backend.result }}
+          FRONTEND: ${{ needs.frontend.result }}
+          UI: ${{ needs.ui-e2e.result }}
+        run: |
+          icon() { [ "$1" = success ] && echo "✅" || echo "❌"; }
+          {
+            echo "## Deploy check for \`${GITHUB_SHA::8}\`"
+            echo ""
+            echo "| Check | Result |"
+            echo "| --- | --- |"
+            echo "| Backend build + API tests | $(icon "$BACKEND") $BACKEND |"
+            echo "| Frontend architecture + build | $(icon "$FRONTEND") $FRONTEND |"
+            echo "| UI e2e (Playwright) | $(icon "$UI") $UI |"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$BACKEND" = success ] && [ "$FRONTEND" = success ] && [ "$UI" = success ]; then
+            echo "**Ready to deploy.**" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "**Not ready to deploy** — open the failed job above." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi

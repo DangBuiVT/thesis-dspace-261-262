@@ -1,4 +1,5 @@
 import { Readable } from 'node:stream';
+import { ArchiveSigningService } from '../signing/archive-signing.service';
 import { PdfStampingService, SignatureStyleType } from '../reviews/pdf-stamping.service';
 import {
   BadRequestException,
@@ -31,7 +32,7 @@ import {
 } from "./submission-metadata";
 import { SubmissionFormFieldsService } from "./submission-form-fields.service";
 import { GroupsService } from "../workflow/groups.service";
-import { WorkflowService } from "../workflow/workflow.service";
+import { WorkflowService, type WorkflowRole as WorkflowStepRole } from "../workflow/workflow.service";
 import {
   THESIS_MAX_FILE_SIZE_MB,
   isThesisPdfUpload,
@@ -46,7 +47,7 @@ import {
   SubmissionStatus,
   WorkflowEventType,
   WorkflowRole,
-} from "src/common/constants/workflow.constants";
+} from "../common/constants/workflow.constants";
 import { UpdateMetadataDto } from "./dto/update-metadata.dto";
 
 const uploadsRoot = path.join(process.cwd(), "uploads", "submissions");
@@ -72,6 +73,7 @@ export class SubmissionsService {
     private readonly workflow: WorkflowService,
     private readonly groups: GroupsService,
     private readonly pdfStampingService: PdfStampingService,
+    private readonly archiveSigning: ArchiveSigningService,
   ) {}
 
   private isAdminActor(actor: JwtPayload): boolean {
@@ -87,6 +89,111 @@ export class SubmissionsService {
     }
     if (actor.sub !== studentId) {
       throw new ForbiddenException("Students can only submit as themselves");
+    }
+  }
+
+  /**
+   * Tuỳ chọn chỉ Admin được dùng khi nộp thay: khoa riêng cho bài nộp (hoặc "Khác" nhập tay),
+   * bật/tắt từng bước duyệt, kiểu ký số khi tự lưu chiểu.
+   */
+  private parseAdminSubmissionOptions(
+    actor: JwtPayload,
+    dto: {
+      facultyId?: string;
+      facultyOtherName?: string;
+      workflowRoles?: string[];
+      signatureStyle?: string;
+    },
+  ): {
+    isAdmin: boolean;
+    facultyId: string | null;
+    facultyOtherName: string | null;
+    workflowRoles: WorkflowStepRole[] | null;
+    signatureStyle?: string;
+  } {
+    const facultyId = dto.facultyId?.trim() || null;
+    const facultyOtherName = dto.facultyOtherName?.trim() || null;
+    const workflowRoles = Array.isArray(dto.workflowRoles)
+      ? (dto.workflowRoles as WorkflowStepRole[])
+      : null;
+    const isAdmin = this.isAdminActor(actor);
+    if (
+      facultyId &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(facultyId)
+    ) {
+      throw new BadRequestException("Invalid faculty");
+    }
+    if (!isAdmin) {
+      if (facultyId || facultyOtherName || workflowRoles || dto.signatureStyle) {
+        throw new ForbiddenException(
+          "Only administrators can override faculty, period or workflow steps",
+        );
+      }
+      return { isAdmin, facultyId: null, facultyOtherName: null, workflowRoles: null };
+    }
+    return {
+      isAdmin,
+      facultyId: facultyOtherName ? null : facultyId,
+      facultyOtherName,
+      workflowRoles,
+      signatureStyle: dto.signatureStyle,
+    };
+  }
+
+  /**
+   * Ghi khoa riêng của bài nộp (Admin chọn). Hồ sơ sinh viên giữ nguyên.
+   * - "Khác": tên khoa nhập tay, đánh dấu trong extra_metadata để Admin tự chọn collection khi đẩy DSpace.
+   * - Khoa B mà không chọn đợt: lấy tên khoa từ bảng faculties.
+   */
+  private async applyAdminFacultyOverride(
+    adminOptions: { isAdmin: boolean; facultyId: string | null; facultyOtherName: string | null },
+    period: { periodId: string | null; facultyId: string; facultyName: string },
+    extraMetadata: Record<string, string>,
+  ) {
+    if (!adminOptions.isAdmin) {
+      return;
+    }
+    if (adminOptions.facultyOtherName) {
+      period.facultyId = "";
+      period.facultyName = adminOptions.facultyOtherName;
+      extraMetadata.facultyOtherName = adminOptions.facultyOtherName;
+      return;
+    }
+    delete extraMetadata.facultyOtherName;
+    if (adminOptions.facultyId && !period.periodId) {
+      const faculty = await this.db.query<{ name: string }>(
+        `SELECT name FROM faculties WHERE id = $1::uuid LIMIT 1`,
+        [adminOptions.facultyId],
+      );
+      if (!faculty.rows[0]) {
+        throw new BadRequestException("Faculty not found");
+      }
+      period.facultyId = adminOptions.facultyId;
+      period.facultyName = faculty.rows[0].name;
+    }
+  }
+
+  /** Student: đợt phải đang mở. Admin: được chọn cả đợt đã đóng / bị ẩn. */
+  private resolvePeriodForActor(isAdmin: boolean, periodId: string) {
+    return isAdmin
+      ? this.submissionPeriodsService.resolvePeriodAnyState(periodId)
+      : this.submissionPeriodsService.resolveOpenPeriod(periodId);
+  }
+
+  /** Student: đợt phải thuộc khoa của SV. Admin: đợt phải thuộc khoa Admin chọn cho bài nộp. */
+  private assertPeriodFacultyForActor(
+    adminOptions: { isAdmin: boolean; facultyId: string | null },
+    student: { facultyId: string | null },
+    periodFacultyId: string,
+  ) {
+    if (!adminOptions.isAdmin) {
+      this.assertPeriodMatchesStudentFaculty(student, periodFacultyId);
+      return;
+    }
+    if (adminOptions.facultyId && adminOptions.facultyId !== periodFacultyId) {
+      throw new BadRequestException(
+        "The submission period must belong to the selected faculty",
+      );
     }
   }
 
@@ -346,6 +453,12 @@ export class SubmissionsService {
       .map((user) => user.displayName || user.username)
       .join("; ");
 
+    const adminOptions = this.parseAdminSubmissionOptions(actor, dto);
+    // Admin tắt bước Phản biện → không bắt buộc chọn tài khoản phản biện
+    const reviewerStepOff =
+      adminOptions.workflowRoles !== null &&
+      !adminOptions.workflowRoles.includes("reviewer");
+
     const reviewersEnabled = await this.fieldActive("reviewerIds", true);
     const reviewersNative = await this.usesNative("reviewerIds", "select");
     const uniqueReviewerIds =
@@ -354,13 +467,14 @@ export class SubmissionsService {
         : [];
     if (!reviewersNative && reviewersEnabled) {
       const reviewerText = (dto.reviewerIds ?? []).join(", ").trim();
-      if ((await this.fieldMust("reviewerIds", true)) && !reviewerText) {
+      if (!reviewerStepOff && (await this.fieldMust("reviewerIds", true)) && !reviewerText) {
         throw new BadRequestException("At least one reviewer is required");
       }
       if (reviewerText) {
         extraMetadata.reviewerIds = reviewerText;
       }
     } else if (
+      !reviewerStepOff &&
       (await this.fieldMust("reviewerIds", true)) &&
       uniqueReviewerIds.length === 0
     ) {
@@ -384,6 +498,7 @@ export class SubmissionsService {
     const periodEnabled = await this.fieldActive("submissionPeriodId", true);
     const periodNative = await this.usesNative("submissionPeriodId", "select");
     if (
+      !adminOptions.facultyOtherName &&
       (await this.fieldMust("submissionPeriodId", true)) &&
       !dto.submissionPeriodId?.trim()
     ) {
@@ -403,10 +518,11 @@ export class SubmissionsService {
       facultyId: student.facultyId || "",
     };
     if (periodEnabled && periodNative && dto.submissionPeriodId) {
-      const resolved = await this.submissionPeriodsService.resolveOpenPeriod(
+      const resolved = await this.resolvePeriodForActor(
+        adminOptions.isAdmin,
         dto.submissionPeriodId,
       );
-      this.assertPeriodMatchesStudentFaculty(student, resolved.facultyId, actor);
+      this.assertPeriodFacultyForActor(adminOptions, student, resolved.facultyId);
       period = resolved;
     } else if (
       periodEnabled &&
@@ -415,6 +531,7 @@ export class SubmissionsService {
     ) {
       extraMetadata.submissionPeriodId = dto.submissionPeriodId.trim();
     }
+    await this.applyAdminFacultyOverride(adminOptions, period, extraMetadata);
 
     const submissionId = randomUUID();
     const targetDirectory = path.join(uploadsRoot, submissionId);
@@ -435,7 +552,7 @@ export class SubmissionsService {
       });
     }
 
-    let placed: { status: string; role: string } = {
+    let placed: { status: string; role: string | null } = {
       status: "reviewing",
       role: "reviewer",
     };
@@ -506,6 +623,13 @@ export class SubmissionsService {
               submittedOnBehalf: this.isAdminActor(actor)
                 ? dto.studentId
                 : undefined,
+              adminOverrides: adminOptions.isAdmin
+                ? {
+                    facultyId: adminOptions.facultyId,
+                    facultyOtherName: adminOptions.facultyOtherName,
+                    workflowRoles: adminOptions.workflowRoles,
+                  }
+                : undefined,
             }),
             actor.role,
           ],
@@ -521,7 +645,12 @@ export class SubmissionsService {
           sortOrder += 1;
         }
 
-        await this.replaceReviewers(client, submissionId, uniqueReviewerIds);
+        // Bước Phản biện bị tắt: chỉ giữ tên phản biện (cột reviewer), không tạo lượt duyệt
+        await this.replaceReviewers(
+          client,
+          submissionId,
+          reviewerStepOff ? [] : uniqueReviewerIds,
+        );
 
         await this.deleteDraftsForAuthors(
           client,
@@ -542,7 +671,11 @@ export class SubmissionsService {
             ],
           );
         }
-        placed = await this.workflow.snapshot(client, submissionId);
+        placed = await this.workflow.snapshot(client, submissionId, {
+          enabledRoles: adminOptions.workflowRoles,
+          actor,
+          signatureStyle: adminOptions.signatureStyle,
+        });
         await client.query("COMMIT");
       } catch (error) {
         await client.query("ROLLBACK");
@@ -633,11 +766,17 @@ export class SubmissionsService {
     let periodContext: Awaited<
       ReturnType<SubmissionPeriodsService["resolveOpenPeriod"]>
     > | null = null;
+    const draftAdminOptions = this.parseAdminSubmissionOptions(actor, dto);
     if (dto.submissionPeriodId) {
-      periodContext = await this.submissionPeriodsService.resolveOpenPeriod(
+      periodContext = await this.resolvePeriodForActor(
+        draftAdminOptions.isAdmin,
         dto.submissionPeriodId,
       );
-      this.assertPeriodMatchesStudentFaculty(student, periodContext.facultyId, actor);
+      this.assertPeriodFacultyForActor(
+        draftAdminOptions,
+        student,
+        periodContext.facultyId,
+      );
     }
 
     const submissionId = randomUUID();
@@ -816,10 +955,13 @@ export class SubmissionsService {
         ReturnType<SubmissionPeriodsService["resolveOpenPeriod"]>
       > | null = null;
       const periodId = dto.submissionPeriodId ?? row.submission_period_id;
+      const draftAdminOptions = this.parseAdminSubmissionOptions(actor, dto);
       if (periodId) {
         if (row.status === "draft") {
-          periodContext =
-            await this.submissionPeriodsService.resolveOpenPeriod(periodId);
+          periodContext = await this.resolvePeriodForActor(
+            draftAdminOptions.isAdmin,
+            periodId,
+          );
         } else {
           const periodCheck = await client.query(
             `SELECT 1 FROM submission_periods WHERE id = $1::uuid LIMIT 1`,
@@ -868,7 +1010,8 @@ export class SubmissionsService {
         }
       }
       if (periodContext?.facultyId) {
-        this.assertPeriodMatchesStudentFaculty(
+        this.assertPeriodFacultyForActor(
+          draftAdminOptions,
           student,
           periodContext.facultyId,
           actor,
@@ -998,7 +1141,7 @@ export class SubmissionsService {
     }
 
     let resubmit = false;
-    let placed: { status: string; role: string } = {
+    let placed: { status: string; role: string | null } = {
       status: "reviewing",
       role: "reviewer",
     };
@@ -1099,6 +1242,10 @@ export class SubmissionsService {
       const abstract =
         formValues.columns.abstract ?? (dto.abstract?.trim() || row.abstract);
       const extraMetadata = formValues.extra;
+      const adminOptions = this.parseAdminSubmissionOptions(actor, dto);
+      const reviewerStepOff =
+        adminOptions.workflowRoles !== null &&
+        !adminOptions.workflowRoles.includes("reviewer");
 
       const periodEnabled = await this.fieldActive("submissionPeriodId", true);
       const periodNative = await this.usesNative(
@@ -1110,6 +1257,7 @@ export class SubmissionsService {
           ? (dto.submissionPeriodId ?? row.submission_period_id)
           : null;
       if (
+        !adminOptions.facultyOtherName &&
         periodNative &&
         (await this.fieldMust("submissionPeriodId", true)) &&
         !periodId
@@ -1148,8 +1296,10 @@ export class SubmissionsService {
       if (!periodId) {
         // Period field is off or empty and not required.
       } else if (row.status === "draft") {
-        periodContext =
-          await this.submissionPeriodsService.resolveOpenPeriod(periodId);
+        periodContext = await this.resolvePeriodForActor(
+          adminOptions.isAdmin,
+          periodId,
+        );
       } else if (
         row.status === "rejected" ||
         row.status === "reject" ||
@@ -1193,12 +1343,18 @@ export class SubmissionsService {
         );
       }
       if (periodId) {
-        this.assertPeriodMatchesStudentFaculty(
+        this.assertPeriodFacultyForActor(
+          adminOptions,
           student,
           periodContext.facultyId,
           actor,
         );
       }
+      await this.applyAdminFacultyOverride(
+        adminOptions,
+        periodContext,
+        extraMetadata,
+      );
 
       const authorsEnabled = await this.fieldActive("authorIds", true);
       const authorsNative = await this.usesNative("authorIds", "select");
@@ -1223,7 +1379,7 @@ export class SubmissionsService {
       }
       if (reviewersEnabled && !reviewersNative) {
         const reviewerText = (dto.reviewerIds ?? []).join(", ").trim();
-        if ((await this.fieldMust("reviewerIds", true)) && !reviewerText) {
+        if (!reviewerStepOff && (await this.fieldMust("reviewerIds", true)) && !reviewerText) {
           throw new BadRequestException("At least one reviewer is required");
         }
         if (reviewerText) {
@@ -1236,6 +1392,7 @@ export class SubmissionsService {
         reviewersEnabled && reviewersNative ? dto.reviewerIds : [],
         {
           reviewersRequired:
+            !reviewerStepOff &&
             reviewersEnabled &&
             reviewersNative &&
             (await this.fieldMust("reviewerIds", true)),
@@ -1314,7 +1471,11 @@ export class SubmissionsService {
       );
 
       await this.replaceAuthors(client, submissionId, authorIds);
-      await this.replaceReviewers(client, submissionId, reviewerIds);
+      await this.replaceReviewers(
+        client,
+        submissionId,
+        reviewerStepOff ? [] : reviewerIds,
+      );
 
       await this.deleteDraftsForAuthors(client, authorIds, submissionId);
 
@@ -1351,12 +1512,23 @@ export class SubmissionsService {
             submittedOnBehalf: this.isAdminActor(actor)
               ? row.student_id
               : undefined,
+            adminOverrides: adminOptions.isAdmin
+              ? {
+                  facultyId: adminOptions.facultyId,
+                  facultyOtherName: adminOptions.facultyOtherName,
+                  workflowRoles: adminOptions.workflowRoles,
+                }
+              : undefined,
           }),
           actor.role,
         ],
       );
 
-      placed = await this.workflow.snapshot(client, submissionId);
+      placed = await this.workflow.snapshot(client, submissionId, {
+        enabledRoles: adminOptions.workflowRoles,
+        actor,
+        signatureStyle: adminOptions.signatureStyle,
+      });
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK");
@@ -1794,7 +1966,7 @@ export class SubmissionsService {
       [studentId, studentId],
     );
 
-    return result.rows;
+    return this.workflow.annotate(result.rows);
   }
 
   async getAllSubmissions() {
@@ -1909,7 +2081,11 @@ export class SubmissionsService {
        ORDER BY s.created_at DESC`,
     );
 
-    return result.rows;
+    return this.workflow.annotate(result.rows);
+  }
+
+  getSignatureStatus(submissionId: string) {
+    return this.archiveSigning.status(submissionId);
   }
 
   async getSubmissionFileStream(
@@ -1987,6 +2163,16 @@ export class SubmissionsService {
       throw new NotFoundException("File missing on server");
     }
 
+    // Bản đã lưu chiểu (đã đóng dấu + ký PAdES + dấu thời gian) là file cố định, trả nguyên bản.
+    const signedCopy = await this.archiveSigning.latestSignedPath(submissionId, fileId);
+    if (signedCopy) {
+      return {
+        stream: createReadStream(signedCopy.filePath),
+        contentType: "application/pdf",
+        fileName: `[SIGNED]_${signedCopy.fileName}`,
+      };
+    }
+
     const contentType = this.contentTypeForFileName(row.file_name);
 
     if (contentType === "application/pdf") {
@@ -2003,16 +2189,24 @@ export class SubmissionsService {
       if (isSigned || style) {
         try {
           const certSerial = signatureEvent.rows[0]?.payload?.certificate_serial;
+          const watermarkPages = signatureEvent.rows[0]?.payload?.watermark_pages || 
+            (await this.db.query<{ value: string }>("SELECT value FROM system_settings WHERE key = 'signature_watermark_pages' LIMIT 1")).rows[0]?.value || "10";
           const stampedBytes = await this.pdfStampingService.stampPdfFile(
             row.file_url,
             requestedStyle,
-            { serial: certSerial }
+            { 
+              serial: certSerial,
+              watermarkPages,
+              enableLogoWatermark: true,
+            }
           );
           const stampedStream = Readable.from(Buffer.from(stampedBytes));
           return {
             stream: stampedStream,
             contentType,
-            fileName: isSigned ? `[SIGNED]_${row.file_name}` : row.file_name,
+            // Không có bản ký PAdES thật (bản xem trước hoặc bài lưu chiểu từ trước khi có ký số):
+            // chỉ là PDF đã đóng dấu hình ảnh, nên không gắn nhãn [SIGNED].
+            fileName: row.file_name,
           };
         } catch (e) {
           // fallback
@@ -2121,30 +2315,40 @@ export class SubmissionsService {
     }
   }
 
-  async getSubmissionHistory(submissionId: string) {
-    const query = `
-      SELECT 
-        se.id,
-        se.created_at AS "createdAt",
-        se.actor_role AS "role",
-        se.event_type AS "eventType",
-        COALESCE(u.display_name, se.actor_id) AS "actorName",
-        se.payload->>'comment' AS "comment",
-        CASE 
-          WHEN se.event_type ILIKE '%approved%' THEN 'approved'
-          WHEN se.event_type ILIKE '%rejected%' THEN 'rejected'
-          WHEN se.event_type = 'SUBMIT' THEN 'submitted'
-          WHEN se.event_type = 'RESUBMIT' THEN 'resubmitted'
-          WHEN se.event_type = 'metadata_updated' THEN 'metadata_updated'
-          ELSE se.event_type
-        END AS "action",
-        se.payload
-      FROM submission_events se
-      LEFT JOIN users u ON se.actor_id = u.username
-      WHERE se.submission_id = $1::uuid
-      ORDER BY se.created_at ASC
-    `;
-    const result = await this.db.query(query, [submissionId]);
+  private async assertCanReadSubmission(user: JwtPayload, submissionId: string) {
+    const result = await this.db.query(
+      `SELECT s.student_id,
+              EXISTS (SELECT 1 FROM submission_authors a WHERE a.submission_id = s.id AND a.user_id = $2) AS coauthor,
+              EXISTS (SELECT 1 FROM reviews r WHERE r.submission_id = s.id AND r.reviewer_id = $2) AS assigned
+       FROM submissions s WHERE s.id = $1::uuid`,
+      [submissionId, user.sub],
+    );
+    const row = result.rows[0];
+    if (!row) throw new NotFoundException("Submission not found");
+    if (["library_staff", "director", "admin"].includes(user.role)) return;
+    if (user.role === "student" && (row.student_id === user.sub || row.coauthor)) return;
+    if (user.role === "reviewer" && row.assigned) return;
+    throw new ForbiddenException("You are not allowed to access this submission");
+  }
+
+  async getSubmissionHistory(user: JwtPayload, submissionId: string) {
+    await this.assertCanReadSubmission(user, submissionId);
+    const result = await this.db.query(
+      `SELECT se.id, se.created_at AS "createdAt", se.actor_role AS "actorRole",
+              se.actor_role AS "role", se.payload->>'comment' AS "comment",
+              CASE
+                WHEN se.event_type ILIKE '%approved%' THEN 'approved'
+                WHEN se.event_type ILIKE '%rejected%' THEN 'rejected'
+                WHEN se.event_type = 'SUBMIT' THEN 'submitted'
+                WHEN se.event_type = 'RESUBMIT' THEN 'resubmitted'
+                ELSE se.event_type
+              END AS "action",
+              se.event_type AS "eventType", COALESCE(u.display_name, se.actor_id) AS "actorName",
+              se.actor_id AS "actorId", se.payload
+       FROM submission_events se LEFT JOIN users u ON se.actor_id = u.username
+       WHERE se.submission_id = $1::uuid ORDER BY se.created_at ASC, se.id ASC`,
+      [submissionId],
+    );
     return result.rows;
   }
 
@@ -2162,66 +2366,68 @@ export class SubmissionsService {
         "Only Library Staff, Director, or Admin have permission to compile metadata",
       );
     }
-
+    const fieldMap: Record<string, string> = {
+      titleVi: "title_vi", titleEn: "title_en", abstract: "abstract", keywords: "keywords",
+      thesisAdvisors: "thesis_advisors", major: "major", thesisYear: "thesis_year",
+      description: "description", dateIssued: "date_issued", publisher: "publisher",
+      documentType: "document_type", language: "language",
+    };
     const client = await this.db.connect();
     try {
       await client.query("BEGIN");
-
-      const res = await client.query<{ status: string; extra_metadata: any }>(
-        `SELECT status, extra_metadata FROM submissions WHERE id = $1::uuid LIMIT 1 FOR UPDATE`,
-        [submissionId],
+      const result = await client.query(
+        `SELECT s.*, ss.role AS active_role FROM submissions s
+         LEFT JOIN submission_steps ss ON ss.submission_id = s.id AND ss.sort_order = s.current_step
+         WHERE s.id = $1::uuid FOR UPDATE OF s`, [submissionId],
       );
-      const submission = res.rows[0];
-
-      if (!submission) {
-        throw new NotFoundException("Submission not found");
+      const row = result.rows[0];
+      if (!row) throw new NotFoundException("Submission not found");
+      const isDirector = user.role === WorkflowRole.DIRECTOR;
+      const isLibraryOrAdmin = user.role === WorkflowRole.LIBRARY_STAFF || user.role === WorkflowRole.ADMIN;
+      const canEdit =
+        (isLibraryOrAdmin && row.status === SubmissionStatus.REVIEWING) ||
+        (isDirector && (row.status === SubmissionStatus.APPROVED || row.status === SubmissionStatus.REVIEWING)) ||
+        user.role === WorkflowRole.ADMIN;
+      if (!canEdit) {
+        throw new BadRequestException("This submission is not waiting for metadata compilation or director approval");
       }
 
-      if (
-        submission.status !== SubmissionStatus.REVIEWING &&
-        submission.status !== SubmissionStatus.APPROVED
-      ) {
-        throw new BadRequestException("File is not in reviewing or director pending state");
+      const updates: Record<string, string> = {};
+      for (const [key, value] of Object.entries(dto)) {
+        if (value == null || key === "comment") continue;
+        const field = key === "title" ? "titleEn" : key;
+        if (!fieldMap[field]) throw new BadRequestException(`Unsupported metadata field: ${key}`);
+        updates[field] = String(value).trim();
       }
-
-      await client.query(
-        `UPDATE submissions 
-        SET title_vi = COALESCE($1, title_vi),
-            title_en = COALESCE($2, title_en),
-            description = COALESCE($3, description),
-            keywords = COALESCE($4, keywords),
-            thesis_advisors = COALESCE($5, thesis_advisors),
-            major = COALESCE($6, major),
-            thesis_year = COALESCE($7, thesis_year),
-            updated_at = NOW()
-        WHERE id = $8::uuid`,
-        [
-          dto.titleVi,
-          dto.titleEn,
-          dto.abstract,
-          dto.keywords,
-          dto.thesisAdvisors,
-          dto.major,
-          dto.thesisYear,
-          submissionId,
-        ],
-      );
-
-      await client.query(
-        `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
-        VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
-        [
-          randomUUID(),
-          submissionId,
-          user.sub,
-          user.role,
-          WorkflowEventType.METADATA_UPDATED,
-          JSON.stringify({ updatedFields: dto }),
-        ],
-      );
-
+      const meta = mergeThesisMetadata(updates, row.student_id, {
+        titleVi: row.title_vi, titleEn: row.title_en, thesisAdvisors: row.thesis_advisors,
+        major: row.major, thesisYear: row.thesis_year, description: row.description,
+      }, { required: false });
+      await this.assertConfiguredMetadata(meta);
+      if (updates.abstract === "" && await this.fieldMust("abstract", false)) {
+        throw new BadRequestException("Abstract is required");
+      }
+      const changes = Object.entries(updates)
+        .filter(([key, value]) => value !== String(row[fieldMap[key]] ?? ""))
+        .map(([field, after]) => ({ field, before: String(row[fieldMap[field]] ?? ""), after }));
+      if (changes.length) {
+        const values: unknown[] = changes.map(change => change.after);
+        const assignments = changes.map((change, index) => `${fieldMap[change.field]} = $${index + 1}`);
+        if (changes.some(change => change.field === "titleVi" || change.field === "titleEn")) {
+          values.push(meta.title);
+          assignments.push(`title = $${values.length}`);
+        }
+        values.push(submissionId);
+        await client.query(`UPDATE submissions SET ${assignments.join(", ")} WHERE id = $${values.length}::uuid`, values);
+        await client.query(
+          `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
+          [randomUUID(), submissionId, user.sub, user.role, WorkflowEventType.METADATA_UPDATED,
+           JSON.stringify({ changes, updatedFields: updates, comment: dto.comment?.trim() || null })],
+        );
+      }
       await client.query("COMMIT");
-      return { ok: true, message: "Cập nhật metadata thành công" };
+      return { ok: true, changes };
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;

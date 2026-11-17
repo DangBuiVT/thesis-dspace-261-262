@@ -1,3 +1,4 @@
+import { ApiBearerAuth } from "@nestjs/swagger";
 import { BadRequestException, Controller, Get, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { PermissionsGuard } from "../auth/permissions.guard";
@@ -6,6 +7,7 @@ import { GroupsService } from "../workflow/groups.service";
 import { USER_ROLES, isUserRole } from "./user-role";
 import { UsersService } from "./users.service";
 
+@ApiBearerAuth()
 @Controller("users")
 export class UsersController {
   constructor(

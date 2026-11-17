@@ -23,18 +23,34 @@ const STRUCTURAL_FIELDS: Array<{
 ];
 
 export async function ensurePortalSchema(db: Pool) {
+  await db.query(`
+    INSERT INTO system_settings (key, value, description) VALUES
+      ('signature_style', 'margin_strips', 'Default visible signature style on archived PDFs: margin_strips, diagonal or invisible'),
+      ('signature_watermark_pages', '10', 'Pages that receive the HCMUT logo watermark, e.g. 10 or 10,15 or 10-12'),
+      ('signature_watermark_text', 'TRƯỜNG ĐẠI HỌC BÁCH KHOA - HCMUT', 'Wording printed next to the logo in the margin strips and on the diagonal ribbon')
+    ON CONFLICT (key) DO NOTHING
+  `);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS submission_signed_files (
+      id UUID PRIMARY KEY,
+      submission_id UUID NOT NULL,
+      source_file_id UUID,
+      file_name TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      sha256 TEXT NOT NULL,
+      signature_style TEXT,
+      certificate_serial TEXT,
+      issuer TEXT,
+      signed_at TIMESTAMPTZ NOT NULL,
+      tsa_url TEXT,
+      tsa_status TEXT,
+      tsa_time TIMESTAMPTZ,
+      signer_sub TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
   await db.query(`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS current_step INT`);
   await db.query(`DROP INDEX IF EXISTS idx_submissions_one_active_per_student`);
-  try {
-    await db.query(
-      `INSERT INTO users (username, password, display_name, auth_source, role, status, faculty_id)
-       VALUES ('student2', 'student123', 'Student Beta', 'local', 'student', 'active', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0005')
-       ON CONFLICT (username) DO NOTHING`
-    );
-  } catch {
-    // users table may not exist yet on first boot
-  }
-
   try {
     await db.query(`
       INSERT INTO faculties (id, name, status)
@@ -67,10 +83,7 @@ export async function ensurePortalSchema(db: Pool) {
         'open',
         TRUE
       )
-      ON CONFLICT (id) DO UPDATE SET
-        status = 'open',
-        opens_at = NOW() - INTERVAL '30 days',
-        closes_at = NOW() + INTERVAL '120 days';
+      ON CONFLICT (id) DO NOTHING;
     `);
   } catch (_e) {
     // Ignore if table not yet created
