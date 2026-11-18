@@ -12,6 +12,7 @@ import {
 import { WorkflowMailService } from "../mail/workflow-mail.service";
 import { createPgPool } from "../users/db-pool";
 import type { JwtPayload } from "../auth/jwt.strategy";
+import type { PoolClient } from "pg";
 import { GroupsService } from "../workflow/groups.service";
 import { WorkflowService } from "../workflow/workflow.service";
 import { ReviewActionDto } from "./dto/review-action.dto";
@@ -617,6 +618,76 @@ export class ReviewsService {
     return { ok: true };
   }
 
+  private async ensureStandardizedPdfFileName(
+    client: PoolClient,
+    submissionId: string,
+  ): Promise<string | null> {
+    try {
+      const subInfo = await client.query<{
+        thesis_year: string | null;
+        date_issued: string | null;
+        semester_name: string | null;
+        faculty_name: string | null;
+        student_id: string;
+        author_user_ids: string[];
+        thesis_file_name: string | null;
+      }>(
+        `SELECT s.thesis_year, s.date_issued,
+                COALESCE(NULLIF(s.semester_name, ''), sem.name) AS semester_name,
+                COALESCE(NULLIF(s.faculty_name, ''), f.name) AS faculty_name,
+                s.student_id,
+                (
+                  SELECT COALESCE(json_agg(sa.user_id ORDER BY sa.sort_order), '[]'::json)
+                  FROM submission_authors sa
+                  WHERE sa.submission_id = s.id
+                ) AS author_user_ids,
+                (
+                  SELECT sf.file_name
+                  FROM submission_files sf
+                  WHERE sf.submission_id = s.id AND sf.file_type = 'thesis'
+                  LIMIT 1
+                ) AS thesis_file_name
+         FROM submissions s
+         LEFT JOIN submission_periods sp ON sp.id = s.submission_period_id
+         LEFT JOIN semesters sem ON sem.id = sp.semester_id
+         LEFT JOIN faculties f ON f.id = sem.faculty_id
+         WHERE s.id = $1::uuid
+         LIMIT 1`,
+        [submissionId],
+      );
+      const subRow = subInfo.rows[0];
+      if (!subRow) return null;
+      const standardPdfFileName = formatStandardDspaceFileName({
+        thesisYear: subRow.thesis_year,
+        dateIssued: subRow.date_issued,
+        semesterName: subRow.semester_name,
+        facultyName: subRow.faculty_name,
+        submitterId: subRow.student_id,
+        authorIds: Array.isArray(subRow.author_user_ids) ? subRow.author_user_ids : [],
+        fileType: "thesis",
+        originalFileName: subRow.thesis_file_name,
+      });
+      if (standardPdfFileName) {
+        await client.query(
+          `UPDATE submission_files
+           SET file_name = $1
+           WHERE submission_id = $2::uuid AND file_type = 'thesis'`,
+          [standardPdfFileName, submissionId],
+        );
+        await client.query(
+          `UPDATE submission_signed_files
+           SET file_name = $1
+           WHERE submission_id = $2::uuid`,
+          [standardPdfFileName, submissionId],
+        );
+        return standardPdfFileName;
+      }
+    } catch {
+      // Log warning nhưng không làm hỏng transaction archive
+    }
+    return null;
+  }
+
   async directorAct(user: JwtPayload, dto: ReviewActionDto) {
     if (user.role !== WorkflowRole.DIRECTOR && user.role !== WorkflowRole.ADMIN) {
       throw new ForbiddenException();
@@ -704,6 +775,9 @@ export class ReviewsService {
         );
 
         if (dto.action === ReviewActionType.ARCHIVE) {
+          // Chuẩn hóa tên file theo quy định HCMUT / DSpace TRƯỚC khi thực hiện ký số
+          await this.ensureStandardizedPdfFileName(client, dto.submissionId);
+
           // Tính toán SHA-256 Hash toàn vẹn cho chữ ký số lưu chiểu
           const archived = await this.archiveSigning.signArchivedPdf({
             submissionId: dto.submissionId,
@@ -714,71 +788,15 @@ export class ReviewsService {
           });
           const evidence = archived ? signedEvidence(archived) : null;
 
+          // Cập nhật lại tên chuẩn trong bảng signed_files nếu có
+          await this.ensureStandardizedPdfFileName(client, dto.submissionId);
+
           await client.query(
             `UPDATE submissions
              SET dspace_publish_status = COALESCE(NULLIF(dspace_publish_status, ''), 'pending')
              WHERE id = $1::uuid`,
             [dto.submissionId]
           );
-
-          // Cập nhật tên file chuẩn hóa theo quy định lưu chiểu HCMUT / DSpace
-          try {
-            const subInfo = await client.query<{
-              thesis_year: string | null;
-              date_issued: string | null;
-              semester_name: string | null;
-              faculty_name: string | null;
-              student_id: string;
-              author_user_ids: string[];
-              thesis_file_name: string | null;
-            }>(
-              `SELECT s.thesis_year, s.date_issued,
-                      COALESCE(NULLIF(s.semester_name, ''), sem.name) AS semester_name,
-                      COALESCE(NULLIF(s.faculty_name, ''), f.name) AS faculty_name,
-                      s.student_id,
-                      (
-                        SELECT COALESCE(json_agg(sa.user_id ORDER BY sa.sort_order), '[]'::json)
-                        FROM submission_authors sa
-                        WHERE sa.submission_id = s.id
-                      ) AS author_user_ids,
-                      (
-                        SELECT sf.file_name
-                        FROM submission_files sf
-                        WHERE sf.submission_id = s.id AND sf.file_type = 'thesis'
-                        LIMIT 1
-                      ) AS thesis_file_name
-               FROM submissions s
-               LEFT JOIN submission_periods sp ON sp.id = s.submission_period_id
-               LEFT JOIN semesters sem ON sem.id = sp.semester_id
-               LEFT JOIN faculties f ON f.id = sem.faculty_id
-               WHERE s.id = $1::uuid
-               LIMIT 1`,
-              [dto.submissionId],
-            );
-            const subRow = subInfo.rows[0];
-            if (subRow) {
-              const standardPdfFileName = formatStandardDspaceFileName({
-                thesisYear: subRow.thesis_year,
-                dateIssued: subRow.date_issued,
-                semesterName: subRow.semester_name,
-                facultyName: subRow.faculty_name,
-                submitterId: subRow.student_id,
-                authorIds: Array.isArray(subRow.author_user_ids) ? subRow.author_user_ids : [],
-                fileType: "thesis",
-                originalFileName: subRow.thesis_file_name,
-              });
-              if (standardPdfFileName) {
-                await client.query(
-                  `UPDATE submission_files
-                   SET file_name = $1
-                   WHERE submission_id = $2::uuid AND file_type = 'thesis'`,
-                  [standardPdfFileName, dto.submissionId],
-                );
-              }
-            }
-          } catch (e) {
-            // Log warning nhưng không làm hỏng transaction archive
-          }
 
           if (evidence) await client.query(
             `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
@@ -1220,6 +1238,7 @@ export class ReviewsService {
           );
 
           if (dto.action === ReviewActionType.ARCHIVE) {
+            await this.ensureStandardizedPdfFileName(client, dto.submissionId);
             const archived = await this.archiveSigning.signArchivedPdf({
               submissionId: dto.submissionId,
               actorSub: user.sub,
@@ -1228,6 +1247,7 @@ export class ReviewsService {
               watermarkPages: dto.watermarkPages || (dto.metadata as any)?.watermarkPages || (await this.db.query<{ value: string }>("SELECT value FROM system_settings WHERE key = 'signature_watermark_pages' LIMIT 1")).rows[0]?.value || "10",
             });
             const evidence = archived ? signedEvidence(archived) : null;
+            await this.ensureStandardizedPdfFileName(client, dto.submissionId);
 
             await client.query(
               `UPDATE submissions

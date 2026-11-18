@@ -1,6 +1,7 @@
 import { Readable } from 'node:stream';
 import { ArchiveSigningService } from '../signing/archive-signing.service';
 import { PdfStampingService, SignatureStyleType } from '../reviews/pdf-stamping.service';
+import { formatStandardDspaceFileName } from "../archive/utils/thesis-file-namer.util";
 import {
   BadRequestException,
   ForbiddenException,
@@ -543,10 +544,20 @@ export class SubmissionsService {
         thesisFile,
         targetDirectory,
       );
+      const standardFileName = formatStandardDspaceFileName({
+        thesisYear: meta.thesisYear,
+        dateIssued,
+        semesterName: period.semesterName,
+        facultyName: period.facultyName,
+        submitterId: dto.studentId,
+        authorIds: uniqueAuthorIds,
+        fileType: "thesis",
+        originalFileName: thesisFile.originalname,
+      });
       savedFiles.push({
         id: randomUUID(),
         submission_id: submissionId,
-        file_name: thesisFile.originalname,
+        file_name: standardFileName || thesisFile.originalname,
         file_url: thesisFilePath,
         file_type: "thesis",
       });
@@ -2167,7 +2178,7 @@ export class SubmissionsService {
       return {
         stream: createReadStream(signedCopy.filePath),
         contentType: "application/pdf",
-        fileName: `[SIGNED]_${signedCopy.fileName}`,
+        fileName: signedCopy.fileName,
       };
     }
 
