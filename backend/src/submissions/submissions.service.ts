@@ -2175,10 +2175,13 @@ export class SubmissionsService {
     // Bản đã lưu chiểu (đã đóng dấu + ký PAdES + dấu thời gian) là file cố định, trả nguyên bản.
     const signedCopy = await this.archiveSigning.latestSignedPath(submissionId, fileId);
     if (signedCopy) {
+      const signedFileName = signedCopy.fileName.startsWith("[SIGNED]_")
+        ? signedCopy.fileName
+        : `[SIGNED]_${signedCopy.fileName}`;
       return {
         stream: createReadStream(signedCopy.filePath),
         contentType: "application/pdf",
-        fileName: signedCopy.fileName,
+        fileName: signedFileName,
       };
     }
 
