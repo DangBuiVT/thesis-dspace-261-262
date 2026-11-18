@@ -4,7 +4,6 @@
   "private": true,
   "scripts": {
     "seed:demo": "node scripts/seed-demo.cjs",
-    "pki:init": "ts-node --transpile-only src/signing/pki-cli.ts",
     "start": "node dist/main.js",
     "start:dev": "nest start --watch",
     "build": "nest build",

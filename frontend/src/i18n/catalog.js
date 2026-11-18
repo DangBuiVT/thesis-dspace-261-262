@@ -1,8 +1,6 @@
 import { workflowCatalog } from "./workflow";
-import { verifyCatalog } from "./verify";
 /** Flat VI/EN catalog. Keys are stable English ids; missing keys fall back to English. */
 export const catalog = {
-  ...verifyCatalog,
   ...workflowCatalog,
   "Thesis Deposit Portal": { en: "Thesis Deposit Portal", vi: "Cổng nộp luận văn" },
   "Return to Editor": { en: "Return to Editor", vi: "Trả về Thư viện" },
