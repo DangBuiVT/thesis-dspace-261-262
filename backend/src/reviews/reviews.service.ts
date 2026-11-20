@@ -655,23 +655,12 @@ export class ReviewsService {
   ): Promise<string | null> {
     try {
       const subInfo = await client.query<{
-        thesis_year: string | null;
-        date_issued: string | null;
-        semester_name: string | null;
-        faculty_name: string | null;
         student_id: string;
-        author_user_ids: string[];
+        submitter_name: string | null;
         thesis_file_name: string | null;
       }>(
-        `SELECT s.thesis_year, s.date_issued,
-                COALESCE(NULLIF(s.semester_name, ''), sem.name) AS semester_name,
-                COALESCE(NULLIF(s.faculty_name, ''), f.name) AS faculty_name,
-                s.student_id,
-                (
-                  SELECT COALESCE(json_agg(sa.user_id ORDER BY sa.sort_order), '[]'::json)
-                  FROM submission_authors sa
-                  WHERE sa.submission_id = s.id
-                ) AS author_user_ids,
+        `SELECT s.student_id,
+                COALESCE(su.display_name, s.author) AS submitter_name,
                 (
                   SELECT sf.file_name
                   FROM submission_files sf
@@ -679,9 +668,7 @@ export class ReviewsService {
                   LIMIT 1
                 ) AS thesis_file_name
          FROM submissions s
-         LEFT JOIN submission_periods sp ON sp.id = s.submission_period_id
-         LEFT JOIN semesters sem ON sem.id = sp.semester_id
-         LEFT JOIN faculties f ON f.id = sem.faculty_id
+         LEFT JOIN users su ON su.username = s.student_id
          WHERE s.id = $1::uuid
          LIMIT 1`,
         [submissionId],
@@ -689,14 +676,8 @@ export class ReviewsService {
       const subRow = subInfo.rows[0];
       if (!subRow) return null;
       const standardPdfFileName = formatStandardDspaceFileName({
-        thesisYear: subRow.thesis_year,
-        dateIssued: subRow.date_issued,
-        semesterName: subRow.semester_name,
-        facultyName: subRow.faculty_name,
         submitterId: subRow.student_id,
-        authorIds: Array.isArray(subRow.author_user_ids)
-          ? subRow.author_user_ids
-          : [],
+        submitterName: subRow.submitter_name,
         fileType: "thesis",
         originalFileName: subRow.thesis_file_name,
       });

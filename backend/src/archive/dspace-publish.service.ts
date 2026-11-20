@@ -233,6 +233,7 @@ export class DspacePublishService {
       major: string | null;
       extra_metadata: unknown;
       student_id: string | null;
+      submitter_name: string | null;
       semester_name: string | null;
       faculty_name: string | null;
       author_user_ids: string[] | null;
@@ -272,8 +273,10 @@ export class DspacePublishService {
                 FROM submission_files sf
                 WHERE sf.submission_id = s.id AND sf.file_type = 'thesis'
                 LIMIT 1
-              ) AS thesis_file_name
+              ) AS thesis_file_name,
+              COALESCE(su.display_name, s.author) AS submitter_name
        FROM submissions s
+       LEFT JOIN users su ON su.username = s.student_id
        LEFT JOIN submission_periods sp ON sp.id = s.submission_period_id
        LEFT JOIN semesters sem ON sem.id = sp.semester_id
        LEFT JOIN faculties f ON f.id = sem.faculty_id
@@ -298,14 +301,10 @@ export class DspacePublishService {
     const targetCollectionId = (collectionIdOverride || row.dspace_collection_id || "").trim() || null;
 
     const standardPdfFileName = formatStandardDspaceFileName({
-      thesisYear: row.thesis_year,
-      dateIssued: row.date_issued,
-      semesterName: row.semester_name,
-      facultyName: row.faculty_name,
       submitterId: row.student_id,
-      authorIds: Array.isArray(row.author_user_ids) ? row.author_user_ids : [],
+      submitterName: row.submitter_name,
       fileType: "thesis",
-      originalFileName: row.thesis_file_name
+      originalFileName: row.thesis_file_name,
     });
 
     if (standardPdfFileName && row.thesis_file_url) {
