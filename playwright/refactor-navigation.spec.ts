@@ -66,8 +66,9 @@ test("Extracted administration and archive screens load and session state resets
 
   const student = await createStudent();
   await loginUi(page, student.user.username, student.password);
+  // The submission form is multi-step: "Submit thesis" only appears on the last step.
   await expect(
-    page.getByRole("button", { name: "Submit thesis", exact: true }),
+    page.getByRole("button", { name: "Save draft", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("tab", { name: "Administration", exact: true }),
