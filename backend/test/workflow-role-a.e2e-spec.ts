@@ -1,5 +1,5 @@
 import {
-  ADMIN,
+  ADMIN1 as ADMIN,
   DIRECTOR1,
   LIBRARY1,
   REVIEWER1,
@@ -62,6 +62,13 @@ describe("Workflow Role A Extensions: Metadata Editing, Return to Editor & Scope
 
     it("TC-META-002: Allows Library Staff (Editor) to update metadata and logs audit event", async () => {
       const { id } = await freshSubmission();
+      // Move the submission to the Editor (library staff) step first.
+      const approved = await http()
+        .post("/reviews/action")
+        .set("Authorization", `Bearer ${reviewerToken}`)
+        .send({ submissionId: id, action: "approve" });
+      expect(approved.status).toBe(201);
+
       const updatePayload = {
         titleVi: "Tên Luận Văn Tiếng Việt Chuẩn Hóa",
         titleEn: "Standardized English Thesis Title",

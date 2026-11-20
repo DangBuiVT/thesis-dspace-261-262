@@ -2436,9 +2436,13 @@ export class SubmissionsService {
       const row = result.rows[0];
       if (!row) throw new NotFoundException("Submission not found");
       const isDirector = user.role === WorkflowRole.DIRECTOR;
-      const isLibraryOrAdmin = user.role === WorkflowRole.LIBRARY_STAFF || user.role === WorkflowRole.ADMIN;
+      const isLibraryStaff = user.role === WorkflowRole.LIBRARY_STAFF;
+      // Library staff (Editor) may only edit while the submission sits at the Editor step,
+      // not while it is still with the Reviewer or already forwarded to the Final Editor.
       const canEdit =
-        (isLibraryOrAdmin && row.status === SubmissionStatus.REVIEWING) ||
+        (isLibraryStaff &&
+          row.status === SubmissionStatus.REVIEWING &&
+          row.active_role === WorkflowRole.LIBRARY_STAFF) ||
         (isDirector && (row.status === SubmissionStatus.APPROVED || row.status === SubmissionStatus.REVIEWING)) ||
         user.role === WorkflowRole.ADMIN;
       if (!canEdit) {
