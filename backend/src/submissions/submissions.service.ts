@@ -1,6 +1,7 @@
 import { Readable } from 'node:stream';
 import { ArchiveSigningService } from '../signing/archive-signing.service';
 import { PdfStampingService, SignatureStyleType } from '../reviews/pdf-stamping.service';
+import { formatStandardDspaceFileName } from "../archive/utils/thesis-file-namer.util";
 import {
   BadRequestException,
   ForbiddenException,
@@ -543,10 +544,16 @@ export class SubmissionsService {
         thesisFile,
         targetDirectory,
       );
+      const standardFileName = formatStandardDspaceFileName({
+        submitterId: dto.studentId,
+        submitterName: student.displayName,
+        fileType: "thesis",
+        originalFileName: thesisFile.originalname,
+      });
       savedFiles.push({
         id: randomUUID(),
         submission_id: submissionId,
-        file_name: thesisFile.originalname,
+        file_name: standardFileName || thesisFile.originalname,
         file_url: thesisFilePath,
         file_type: "thesis",
       });
@@ -1851,10 +1858,28 @@ export class SubmissionsService {
       await this.deleteFileSilently(file.file_url);
     }
     const thesisPath = await this.moveUploadedFile(thesisFile, targetDirectory);
+    const subRes = await (client as any).query(
+      `SELECT s.student_id, COALESCE(su.display_name, s.author) AS submitter_name
+       FROM submissions s
+       LEFT JOIN users su ON su.username = s.student_id
+       WHERE s.id = $1::uuid
+       LIMIT 1`,
+      [submissionId],
+    );
+    const subRow = subRes?.rows?.[0];
+    const standardName = subRow
+      ? formatStandardDspaceFileName({
+          submitterId: subRow.student_id,
+          submitterName: subRow.submitter_name,
+          fileType: "thesis",
+          originalFileName: thesisFile.originalname,
+        })
+      : thesisFile.originalname;
+
     await client.query(
       `INSERT INTO submission_files (id, submission_id, file_name, file_url, file_type)
        VALUES ($1, $2::uuid, $3, $4, 'thesis')`,
-      [randomUUID(), submissionId, thesisFile.originalname, thesisPath],
+      [randomUUID(), submissionId, standardName || thesisFile.originalname, thesisPath],
     );
   }
 
@@ -2164,10 +2189,13 @@ export class SubmissionsService {
     // Bản đã lưu chiểu (đã đóng dấu + ký PAdES + dấu thời gian) là file cố định, trả nguyên bản.
     const signedCopy = await this.archiveSigning.latestSignedPath(submissionId, fileId);
     if (signedCopy) {
+      const signedFileName = signedCopy.fileName.startsWith("[SIGNED]_")
+        ? signedCopy.fileName
+        : `[SIGNED]_${signedCopy.fileName}`;
       return {
         stream: createReadStream(signedCopy.filePath),
         contentType: "application/pdf",
-        fileName: `[SIGNED]_${signedCopy.fileName}`,
+        fileName: signedFileName,
       };
     }
 

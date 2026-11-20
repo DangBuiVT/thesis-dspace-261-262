@@ -1,17 +1,21 @@
 /**
  * Utility to format standardized thesis file names for archival and export.
+ * Follows instructor feedback: concise naming consisting of Student ID (MSSV) and Submitter Full Name,
+ * because higher-level hierarchy (Faculty, Semester, Submission Period) is already separated into collections in DSpace.
+ *
  * Example outputs:
- *  - 2026_HK1_CSE_2110123_thesis.pdf
- *  - 2024_HK243_CSE_2110123_2110456_thesis.pdf
- *  - 2026_HK1_CSE_2110123_attachment.zip
+ *  - 2110123_Nguyen_Van_A.pdf
+ *  - student1_Student_Alpha.pdf
+ *  - 2110123_Nguyen_Van_A_attachment.zip
  */
 
 export interface ThesisNamingInput {
+  submitterId?: string | null;
+  submitterName?: string | null;
   thesisYear?: string | null;
   dateIssued?: string | null;
   semesterName?: string | null;
   facultyName?: string | null;
-  submitterId?: string | null;
   authorIds?: string[] | null;
   fileType?: "thesis" | "attachment" | string;
   originalFileName?: string | null;
@@ -26,6 +30,18 @@ function removeVietnameseDiacritics(str: string): string {
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/đ/g, "d")
     .replace(/Đ/g, "D");
+}
+
+/**
+ * Normalizes a person's display name to clean ASCII underscore format (e.g. "Nguyễn Văn A" -> "Nguyen_Van_A").
+ */
+export function normalizePersonName(name?: string | null): string {
+  if (!name || !name.trim()) return "";
+  const clean = removeVietnameseDiacritics(name.trim());
+  return clean
+    .replace(/[^a-zA-Z0-9]/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_|_$/g, "");
 }
 
 /**
@@ -208,33 +224,17 @@ function cleanStudentId(id: string): string {
 }
 
 /**
- * Builds standard DSpace bitstream filename.
- * Format: ${year}_${semester}_${facultyCode}_${studentIds}_${fileType}${ext}
+ * Builds standard DSpace bitstream filename according to instructor feedback:
+ * Format: ${studentId}_${normalizedName}${ext}
+ * Example: 2110123_Nguyen_Van_A.pdf (hoặc student1_Student_Alpha.pdf)
+ *
+ * Higher-level metadata (Faculty, Semester, Submission Period) is already separated
+ * into individual Communities and Collections on DSpace.
  */
 export function formatStandardDspaceFileName(input: ThesisNamingInput): string {
-  const year = extractThesisYear(input.thesisYear, input.dateIssued);
-  const semester = normalizeSemesterCode(input.semesterName, year);
-  const facultyCode = normalizeFacultyCode(input.facultyName);
-
-  // Collect and deduplicate student / author IDs
-  const idSet = new Set<string>();
-  if (input.submitterId && input.submitterId.trim()) {
-    idSet.add(cleanStudentId(input.submitterId));
-  }
-  if (Array.isArray(input.authorIds)) {
-    for (const authorId of input.authorIds) {
-      if (authorId && authorId.trim()) {
-        idSet.add(cleanStudentId(authorId));
-      }
-    }
-  }
-
-  const studentIdsStr =
-    idSet.size > 0
-      ? Array.from(idSet).join("_")
-      : "student";
-
-  const fileTypeTag = input.fileType?.trim() ? input.fileType.trim().toLowerCase() : "thesis";
+  const studentId = input.submitterId ? cleanStudentId(input.submitterId) : "student";
+  const rawName = input.submitterName?.trim();
+  const normalizedName = rawName ? normalizePersonName(rawName) : "";
 
   // Determine extension
   let ext = ".pdf";
@@ -246,11 +246,23 @@ export function formatStandardDspaceFileName(input: ThesisNamingInput): string {
     }
   }
 
-  const parts = [year, semester];
-  if (facultyCode) {
-    parts.push(facultyCode);
+  const fileTypeTag = input.fileType?.trim() ? input.fileType.trim().toLowerCase() : "thesis";
+
+  // Build concise name: [MSSV]_[Ho_Ten]
+  const parts: string[] = [];
+  if (studentId) {
+    parts.push(studentId);
   }
-  parts.push(studentIdsStr, fileTypeTag);
+  if (normalizedName) {
+    parts.push(normalizedName);
+  } else if (!studentId) {
+    parts.push("student");
+  }
+
+  // If this is an attachment file (not thesis PDF), append the tag
+  if (fileTypeTag && fileTypeTag !== "thesis") {
+    parts.push(fileTypeTag);
+  }
 
   return `${parts.join("_")}${ext}`;
 }

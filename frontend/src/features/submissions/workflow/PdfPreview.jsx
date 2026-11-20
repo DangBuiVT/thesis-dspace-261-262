@@ -55,6 +55,17 @@ export default function PdfPreview({ submissionId, files = [], token }) {
   if (!file) return <Empty description={t("No files")} />;
   const isPdf =
     /\.pdf$/i.test(file.fileName || "") || file.mimeType === "application/pdf";
+
+  const currentFileName = file.fileName || "thesis.pdf";
+  const onlineOpenUrl =
+    submissionId && file.id && token
+      ? `/api/submissions/${submissionId}/files/${file.id}/${encodeURIComponent(currentFileName)}?token=${encodeURIComponent(token)}`
+      : undefined;
+  const directDownloadUrl =
+    submissionId && file.id && token
+      ? `/api/submissions/${submissionId}/files/${file.id}/${encodeURIComponent(currentFileName)}?token=${encodeURIComponent(token)}&download=1`
+      : undefined;
+
   return (
     <section className="pdf-preview" aria-label={t("PDF preview")}>
       <Space wrap className="pdf-toolbar">
@@ -68,17 +79,17 @@ export default function PdfPreview({ submissionId, files = [], token }) {
           }))}
         />
         <Button
-          href={url || undefined}
+          href={onlineOpenUrl || url || undefined}
           target="_blank"
           rel="noopener noreferrer"
-          disabled={!url}
+          disabled={!onlineOpenUrl && !url}
         >
           {t("Open")}
         </Button>
         <Button
-          href={url || undefined}
-          download={file.fileName}
-          disabled={!url}
+          href={directDownloadUrl || url || undefined}
+          download={currentFileName}
+          disabled={!directDownloadUrl && !url}
         >
           {t("Download")}
         </Button>

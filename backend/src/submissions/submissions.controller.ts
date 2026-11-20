@@ -240,6 +240,7 @@ export class SubmissionsController {
     @Req() req: { user: JwtPayload },
     @Param("submissionId") submissionId: string,
     @Param("fileId") fileId: string,
+    @Param("fileName") paramFileName: string | undefined,
     @Query("style") style: string | undefined,
     @Query("download") download: string | undefined,
   ) {
@@ -250,8 +251,9 @@ export class SubmissionsController {
         fileId,
         style,
       );
-    const encoded = encodeURIComponent(fileName);
-    const asciiFallback = fileName.replace(/[^\x20-\x7E]/g, "_");
+    const resolvedName = fileName || paramFileName || "thesis.pdf";
+    const encoded = encodeURIComponent(resolvedName);
+    const asciiFallback = resolvedName.replace(/[^\x20-\x7E]/g, "_");
     const dispositionType = download === "1" || download === "true" ? "attachment" : "inline";
     return new StreamableFile(stream, {
       type: contentType,

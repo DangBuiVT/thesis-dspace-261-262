@@ -12,11 +12,16 @@ import {
 import { WorkflowMailService } from "../mail/workflow-mail.service";
 import { createPgPool } from "../users/db-pool";
 import type { JwtPayload } from "../auth/jwt.strategy";
+import type { PoolClient } from "pg";
 import { GroupsService } from "../workflow/groups.service";
 import { WorkflowService } from "../workflow/workflow.service";
 import { ReviewActionDto } from "./dto/review-action.dto";
 import { formatStandardDspaceFileName } from "../archive/utils/thesis-file-namer.util";
-import { ArchiveSigningService, resolveSignatureStyle, signedEvidence } from "../signing/archive-signing.service";
+import {
+  ArchiveSigningService,
+  resolveSignatureStyle,
+  signedEvidence,
+} from "../signing/archive-signing.service";
 import { PdfStampingService, SignatureStyleType } from "./pdf-stamping.service";
 import {
   SubmissionStatus,
@@ -45,7 +50,7 @@ export class ReviewsService {
     private readonly groups: GroupsService,
     private readonly pdfStamping: PdfStampingService,
     private readonly archiveSigning: ArchiveSigningService,
-  ) { }
+  ) {}
 
   private libraryIntakeReadyClause() {
     return `s.status = 'reviewing'
@@ -89,7 +94,10 @@ export class ReviewsService {
     }
   }
   async getMyQueue(user: JwtPayload) {
-    if (user.role !== WorkflowRole.REVIEWER && user.role !== WorkflowRole.ADMIN) {
+    if (
+      user.role !== WorkflowRole.REVIEWER &&
+      user.role !== WorkflowRole.ADMIN
+    ) {
       throw new ForbiddenException();
     }
     await this.workflow.backfillOpenSubmissions();
@@ -173,7 +181,10 @@ export class ReviewsService {
   }
 
   async act(user: JwtPayload, dto: ReviewActionDto) {
-    if (user.role !== WorkflowRole.REVIEWER && user.role !== WorkflowRole.ADMIN) {
+    if (
+      user.role !== WorkflowRole.REVIEWER &&
+      user.role !== WorkflowRole.ADMIN
+    ) {
       throw new ForbiddenException();
     }
     if (dto.action === ReviewActionType.ARCHIVE) {
@@ -181,7 +192,9 @@ export class ReviewsService {
     }
 
     if (dto.action === ReviewActionType.RETURN_TO_EDITOR) {
-      throw new BadRequestException("Only the director can return a submission to Editor");
+      throw new BadRequestException(
+        "Only the director can return a submission to Editor",
+      );
     }
 
     await this.workflow.assertCurrentRole(
@@ -442,7 +455,10 @@ export class ReviewsService {
   }
 
   async getLibraryQueue(user: JwtPayload) {
-    if (user.role !== WorkflowRole.LIBRARY_STAFF && user.role !== WorkflowRole.ADMIN) {
+    if (
+      user.role !== WorkflowRole.LIBRARY_STAFF &&
+      user.role !== WorkflowRole.ADMIN
+    ) {
       throw new ForbiddenException();
     }
     await this.workflow.backfillOpenSubmissions();
@@ -452,7 +468,10 @@ export class ReviewsService {
   }
 
   async getDirectorQueue(user: JwtPayload) {
-    if (user.role !== WorkflowRole.DIRECTOR && user.role !== WorkflowRole.ADMIN) {
+    if (
+      user.role !== WorkflowRole.DIRECTOR &&
+      user.role !== WorkflowRole.ADMIN
+    ) {
       throw new ForbiddenException();
     }
     await this.workflow.backfillOpenSubmissions();
@@ -478,7 +497,10 @@ export class ReviewsService {
   }
 
   async libraryAct(user: JwtPayload, dto: ReviewActionDto) {
-    if (user.role !== WorkflowRole.LIBRARY_STAFF && user.role !== WorkflowRole.ADMIN) {
+    if (
+      user.role !== WorkflowRole.LIBRARY_STAFF &&
+      user.role !== WorkflowRole.ADMIN
+    ) {
       throw new ForbiddenException();
     }
     if (dto.action === ReviewActionType.ARCHIVE) {
@@ -486,7 +508,9 @@ export class ReviewsService {
     }
 
     if (dto.action === ReviewActionType.RETURN_TO_EDITOR) {
-      throw new BadRequestException("Only the director can return a submission to Editor");
+      throw new BadRequestException(
+        "Only the director can return a submission to Editor",
+      );
     }
 
     const step = await this.workflow.assertCurrentRole(
@@ -517,14 +541,22 @@ export class ReviewsService {
     try {
       // Bắt đầu transaction xử lý quyết định của Thư viện
       await client.query("BEGIN");
-      const current = await client.query<{ status: string; current_step: number; active_role: string }>(
+      const current = await client.query<{
+        status: string;
+        current_step: number;
+        active_role: string;
+      }>(
         `SELECT s.status, s.current_step, ss.role AS active_role FROM submissions s
          LEFT JOIN submission_steps ss ON ss.submission_id = s.id AND ss.sort_order = s.current_step
          WHERE s.id = $1::uuid FOR UPDATE OF s`,
         [dto.submissionId],
       );
       const row = current.rows[0];
-      if (!row || row.status !== SubmissionStatus.REVIEWING || row.active_role !== WorkflowRole.LIBRARY_STAFF) {
+      if (
+        !row ||
+        row.status !== SubmissionStatus.REVIEWING ||
+        row.active_role !== WorkflowRole.LIBRARY_STAFF
+      ) {
         throw new BadRequestException("Submission is not in reviewing stage");
       }
 
@@ -617,8 +649,64 @@ export class ReviewsService {
     return { ok: true };
   }
 
+  private async ensureStandardizedPdfFileName(
+    client: PoolClient,
+    submissionId: string,
+  ): Promise<string | null> {
+    try {
+      const subInfo = await client.query<{
+        student_id: string;
+        submitter_name: string | null;
+        thesis_file_name: string | null;
+      }>(
+        `SELECT s.student_id,
+                COALESCE(su.display_name, s.author) AS submitter_name,
+                (
+                  SELECT sf.file_name
+                  FROM submission_files sf
+                  WHERE sf.submission_id = s.id AND sf.file_type = 'thesis'
+                  LIMIT 1
+                ) AS thesis_file_name
+         FROM submissions s
+         LEFT JOIN users su ON su.username = s.student_id
+         WHERE s.id = $1::uuid
+         LIMIT 1`,
+        [submissionId],
+      );
+      const subRow = subInfo.rows[0];
+      if (!subRow) return null;
+      const standardPdfFileName = formatStandardDspaceFileName({
+        submitterId: subRow.student_id,
+        submitterName: subRow.submitter_name,
+        fileType: "thesis",
+        originalFileName: subRow.thesis_file_name,
+      });
+      if (standardPdfFileName) {
+        await client.query(
+          `UPDATE submission_files
+           SET file_name = $1
+           WHERE submission_id = $2::uuid AND file_type = 'thesis'`,
+          [standardPdfFileName, submissionId],
+        );
+        await client.query(
+          `UPDATE submission_signed_files
+           SET file_name = $1
+           WHERE submission_id = $2::uuid`,
+          [standardPdfFileName, submissionId],
+        );
+        return standardPdfFileName;
+      }
+    } catch {
+      // Log warning nhưng không làm hỏng transaction archive
+    }
+    return null;
+  }
+
   async directorAct(user: JwtPayload, dto: ReviewActionDto) {
-    if (user.role !== WorkflowRole.DIRECTOR && user.role !== WorkflowRole.ADMIN) {
+    if (
+      user.role !== WorkflowRole.DIRECTOR &&
+      user.role !== WorkflowRole.ADMIN
+    ) {
       throw new ForbiddenException();
     }
     if (
@@ -646,7 +734,10 @@ export class ReviewsService {
     }
 
     const actorName = user.displayName || user.username;
-    const returnReason = dto.action === ReviewActionType.RETURN_TO_EDITOR ? dto.comment?.trim() || "" : "";
+    const returnReason =
+      dto.action === ReviewActionType.RETURN_TO_EDITOR
+        ? dto.comment?.trim() || ""
+        : "";
     if (dto.action === ReviewActionType.RETURN_TO_EDITOR && !returnReason) {
       throw new BadRequestException("Return reason is required");
     }
@@ -655,7 +746,11 @@ export class ReviewsService {
     try {
       // Bắt đầu transaction ghi nhận quyết định cuối cùng của Giám đốc
       await client.query("BEGIN");
-      const current = await client.query<{ status: string; current_step: number; active_role: string }>(
+      const current = await client.query<{
+        status: string;
+        current_step: number;
+        active_role: string;
+      }>(
         `SELECT s.status, s.current_step, ss.role AS active_role FROM submissions s
          LEFT JOIN submission_steps ss ON ss.submission_id = s.id AND ss.sort_order = s.current_step
          WHERE s.id = $1::uuid FOR UPDATE OF s`,
@@ -666,10 +761,11 @@ export class ReviewsService {
       if (!row) {
         throw new NotFoundException("Submission not found");
       }
-      if (row.active_role !== WorkflowRole.DIRECTOR || (
-        row.status !== SubmissionStatus.APPROVED &&
-        row.status !== SubmissionStatus.REVIEWING
-      )) {
+      if (
+        row.active_role !== WorkflowRole.DIRECTOR ||
+        (row.status !== SubmissionStatus.APPROVED &&
+          row.status !== SubmissionStatus.REVIEWING)
+      ) {
         throw new BadRequestException(
           "This submission is not waiting for the director",
         );
@@ -704,106 +800,84 @@ export class ReviewsService {
         );
 
         if (dto.action === ReviewActionType.ARCHIVE) {
+          // Chuẩn hóa tên file theo quy định HCMUT / DSpace TRƯỚC khi thực hiện ký số
+          await this.ensureStandardizedPdfFileName(client, dto.submissionId);
+
           // Tính toán SHA-256 Hash toàn vẹn cho chữ ký số lưu chiểu
           const archived = await this.archiveSigning.signArchivedPdf({
             submissionId: dto.submissionId,
             actorSub: user.sub,
             actorName: user.displayName || user.username || "Thư viện",
-            style: resolveSignatureStyle(dto.signatureStyle || (dto.metadata as any)?.signatureStyle || (await this.archiveSigning.defaultSignatureStyle())),
-            watermarkPages: dto.watermarkPages || (dto.metadata as any)?.watermarkPages || (await this.db.query<{ value: string }>("SELECT value FROM system_settings WHERE key = 'signature_watermark_pages' LIMIT 1")).rows[0]?.value || "10",
+            style: resolveSignatureStyle(
+              dto.signatureStyle ||
+                (dto.metadata as any)?.signatureStyle ||
+                (await this.archiveSigning.defaultSignatureStyle()),
+            ),
+            watermarkPages:
+              dto.watermarkPages ||
+              (dto.metadata as any)?.watermarkPages ||
+              (
+                await this.db.query<{ value: string }>(
+                  "SELECT value FROM system_settings WHERE key = 'signature_watermark_pages' LIMIT 1",
+                )
+              ).rows[0]?.value ||
+              "10",
           });
           const evidence = archived ? signedEvidence(archived) : null;
+
+          // Cập nhật lại tên chuẩn trong bảng signed_files nếu có
+          await this.ensureStandardizedPdfFileName(client, dto.submissionId);
 
           await client.query(
             `UPDATE submissions
              SET dspace_publish_status = COALESCE(NULLIF(dspace_publish_status, ''), 'pending')
              WHERE id = $1::uuid`,
-            [dto.submissionId]
+            [dto.submissionId],
           );
 
-          // Cập nhật tên file chuẩn hóa theo quy định lưu chiểu HCMUT / DSpace
-          try {
-            const subInfo = await client.query<{
-              thesis_year: string | null;
-              date_issued: string | null;
-              semester_name: string | null;
-              faculty_name: string | null;
-              student_id: string;
-              author_user_ids: string[];
-              thesis_file_name: string | null;
-            }>(
-              `SELECT s.thesis_year, s.date_issued,
-                      COALESCE(NULLIF(s.semester_name, ''), sem.name) AS semester_name,
-                      COALESCE(NULLIF(s.faculty_name, ''), f.name) AS faculty_name,
-                      s.student_id,
-                      (
-                        SELECT COALESCE(json_agg(sa.user_id ORDER BY sa.sort_order), '[]'::json)
-                        FROM submission_authors sa
-                        WHERE sa.submission_id = s.id
-                      ) AS author_user_ids,
-                      (
-                        SELECT sf.file_name
-                        FROM submission_files sf
-                        WHERE sf.submission_id = s.id AND sf.file_type = 'thesis'
-                        LIMIT 1
-                      ) AS thesis_file_name
-               FROM submissions s
-               LEFT JOIN submission_periods sp ON sp.id = s.submission_period_id
-               LEFT JOIN semesters sem ON sem.id = sp.semester_id
-               LEFT JOIN faculties f ON f.id = sem.faculty_id
-               WHERE s.id = $1::uuid
-               LIMIT 1`,
-              [dto.submissionId],
-            );
-            const subRow = subInfo.rows[0];
-            if (subRow) {
-              const standardPdfFileName = formatStandardDspaceFileName({
-                thesisYear: subRow.thesis_year,
-                dateIssued: subRow.date_issued,
-                semesterName: subRow.semester_name,
-                facultyName: subRow.faculty_name,
-                submitterId: subRow.student_id,
-                authorIds: Array.isArray(subRow.author_user_ids) ? subRow.author_user_ids : [],
-                fileType: "thesis",
-                originalFileName: subRow.thesis_file_name,
-              });
-              if (standardPdfFileName) {
-                await client.query(
-                  `UPDATE submission_files
-                   SET file_name = $1
-                   WHERE submission_id = $2::uuid AND file_type = 'thesis'`,
-                  [standardPdfFileName, dto.submissionId],
-                );
-              }
-            }
-          } catch (e) {
-            // Log warning nhưng không làm hỏng transaction archive
-          }
-
-          if (evidence) await client.query(
-            `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
+          if (evidence)
+            await client.query(
+              `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
             VALUES ($1, $2, $3, 'director', 'digital_signature_signed', $4::jsonb)`,
-            [
-              randomUUID(),
-              dto.submissionId,
-              user.sub,
-              JSON.stringify({
-                is_signed: true,
-                ...evidence,
-                institution_text: "ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT",
-                signed_pages_scope: "Tất cả các trang (100% pages)",
-                signer_name: user.displayName || user.username || "ThS. Lê Hoàng (Thư viện)",
-                signed_at: evidence?.signed_at ?? null,
-                signature_style: dto.signatureStyle || (dto.metadata as any)?.signatureStyle || "margin_strips",
-                watermark_pages: dto.watermarkPages || (dto.metadata as any)?.watermarkPages || (await this.db.query<{ value: string }>("SELECT value FROM system_settings WHERE key = 'signature_watermark_pages' LIMIT 1")).rows[0]?.value || "10",
-                signature_style_name: (dto.signatureStyle === "diagonal" || (dto.metadata as any)?.signatureStyle === "diagonal") 
-                  ? "Chữ ký số chéo trang" 
-                  : ((dto.signatureStyle === "invisible" || (dto.metadata as any)?.signatureStyle === "invisible") 
-                    ? "Không chữ ký số (Vô hình)" 
-                    : "Chữ ký số 2 bên lề")
-              })
-            ]
-          );
+              [
+                randomUUID(),
+                dto.submissionId,
+                user.sub,
+                JSON.stringify({
+                  is_signed: true,
+                  ...evidence,
+                  institution_text:
+                    "ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT",
+                  signed_pages_scope: "Tất cả các trang (100% pages)",
+                  signer_name:
+                    user.displayName ||
+                    user.username ||
+                    "ThS. Lê Hoàng (Thư viện)",
+                  signed_at: evidence?.signed_at ?? null,
+                  signature_style:
+                    dto.signatureStyle ||
+                    (dto.metadata as any)?.signatureStyle ||
+                    "margin_strips",
+                  watermark_pages:
+                    dto.watermarkPages ||
+                    (dto.metadata as any)?.watermarkPages ||
+                    (
+                      await this.db.query<{ value: string }>(
+                        "SELECT value FROM system_settings WHERE key = 'signature_watermark_pages' LIMIT 1",
+                      )
+                    ).rows[0]?.value ||
+                    "10",
+                  signature_style_name:
+                    dto.signatureStyle === "diagonal" ||
+                    (dto.metadata as any)?.signatureStyle === "diagonal"
+                      ? "Chữ ký số chéo trang"
+                      : dto.signatureStyle === "invisible" ||
+                          (dto.metadata as any)?.signatureStyle === "invisible"
+                        ? "Không chữ ký số (Vô hình)"
+                        : "Chữ ký số 2 bên lề",
+                }),
+              ],
+            );
         }
         await client.query(
           `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
@@ -829,18 +903,31 @@ export class ReviewsService {
         await client.query(
           `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
            VALUES ($1, $2, $3, 'director', 'director_returned', $4::jsonb)`,
-          [randomUUID(), dto.submissionId, user.sub, JSON.stringify({ comment: returnReason,
-            fromStep: row.current_step, toStep: reverted.targetStep })],
+          [
+            randomUUID(),
+            dto.submissionId,
+            user.sub,
+            JSON.stringify({
+              comment: returnReason,
+              fromStep: row.current_step,
+              toStep: reverted.targetStep,
+            }),
+          ],
         );
         // Ghi log chuyển trạng thái hệ thống
         await client.query(
           `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
            VALUES ($1, $2, $3, 'system', 'status_changed', $4::jsonb)`,
-          [randomUUID(), dto.submissionId, user.sub, JSON.stringify({
-            from: reverted.fromStatus,
-            to: reverted.toStatus,
-            reason: "director_returned",
-          })],
+          [
+            randomUUID(),
+            dto.submissionId,
+            user.sub,
+            JSON.stringify({
+              from: reverted.fromStatus,
+              to: reverted.toStatus,
+              reason: "director_returned",
+            }),
+          ],
         );
       }
       await client.query("COMMIT");
@@ -891,9 +978,7 @@ export class ReviewsService {
       throw new ForbiddenException();
     }
     await this.workflow.backfillOpenSubmissions();
-    return this.getQueueRows(
-      `s.status IN ('reviewing', 'approved')`
-    );
+    return this.getQueueRows(`s.status IN ('reviewing', 'approved')`);
   }
 
   async adminIntakeAct(user: JwtPayload, dto: ReviewActionDto) {
@@ -903,7 +988,11 @@ export class ReviewsService {
     await this.workflow.backfillOpenSubmissions();
 
     // Determine current active workflow step role for this submission
-    const res = await this.db.query<{ role: WorkflowRole; is_last: boolean; status: string }>(
+    const res = await this.db.query<{
+      role: WorkflowRole;
+      is_last: boolean;
+      status: string;
+    }>(
       `SELECT ss.role,
               ss.sort_order = (
                 SELECT MAX(sort_order) FROM submission_steps sx WHERE sx.submission_id = s.id
@@ -913,7 +1002,7 @@ export class ReviewsService {
        JOIN submission_steps ss ON ss.submission_id = s.id AND ss.sort_order = s.current_step
        WHERE s.id = $1::uuid
        LIMIT 1`,
-      [dto.submissionId]
+      [dto.submissionId],
     );
     const currentStep = res.rows[0];
     if (!currentStep) {
@@ -953,9 +1042,11 @@ export class ReviewsService {
            WHERE submission_id = $3::uuid`,
           [
             reviewDecision,
-            dto.action === ReviewActionType.REJECT ? rejectReason || null : null,
+            dto.action === ReviewActionType.REJECT
+              ? rejectReason || null
+              : null,
             dto.submissionId,
-          ]
+          ],
         );
 
         await client.query(
@@ -975,13 +1066,13 @@ export class ReviewsService {
                   ? rejectReason || null
                   : null,
             }),
-          ]
+          ],
         );
 
         if (dto.action === ReviewActionType.REJECT) {
           await client.query(
             `UPDATE submissions SET status = $1 WHERE id = $2::uuid`,
-            [SubmissionStatus.REJECTED, dto.submissionId]
+            [SubmissionStatus.REJECTED, dto.submissionId],
           );
           await client.query(
             `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
@@ -995,11 +1086,14 @@ export class ReviewsService {
                 to: SubmissionStatus.REJECTED,
                 reason: WorkflowEventType.REVIEWER_REJECTED,
               }),
-            ]
+            ],
           );
         } else {
           allReviewersApproved = true;
-          const advanced = await this.workflow.advance(client, dto.submissionId);
+          const advanced = await this.workflow.advance(
+            client,
+            dto.submissionId,
+          );
           enteredRole = advanced.enteredRole;
           await client.query(
             `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
@@ -1013,7 +1107,7 @@ export class ReviewsService {
                 to: advanced.toStatus as SubmissionStatus,
                 reason: "all_reviewers_approved_by_admin",
               }),
-            ]
+            ],
           );
         }
 
@@ -1032,7 +1126,7 @@ export class ReviewsService {
             SubmissionStatus.REJECTED,
             actorName,
             rejectReason,
-          )
+          ),
         );
       } else {
         this.workflowMail.notifySafely("student_reviewer_approved", () =>
@@ -1040,16 +1134,20 @@ export class ReviewsService {
             dto.submissionId,
             SubmissionStatus.APPROVED,
             actorName,
-          )
+          ),
         );
         if (allReviewersApproved) {
           if (enteredRole === WorkflowRole.LIBRARY_STAFF) {
             this.workflowMail.notifySafely("library_review", () =>
-              this.workflowMail.notifyLibraryOnAllReviewersApproved(dto.submissionId)
+              this.workflowMail.notifyLibraryOnAllReviewersApproved(
+                dto.submissionId,
+              ),
             );
           }
           this.workflowMail.notifySafely("student_all_reviewers_approved", () =>
-            this.workflowMail.notifyStudentOnAllReviewersApproved(dto.submissionId)
+            this.workflowMail.notifyStudentOnAllReviewersApproved(
+              dto.submissionId,
+            ),
           );
         }
       }
@@ -1072,7 +1170,7 @@ export class ReviewsService {
         await client.query("BEGIN");
         const current = await client.query<{ status: string }>(
           `SELECT status FROM submissions WHERE id = $1::uuid LIMIT 1 FOR UPDATE`,
-          [dto.submissionId]
+          [dto.submissionId],
         );
         const row = current.rows[0];
         if (!row || row.status !== SubmissionStatus.REVIEWING) {
@@ -1080,13 +1178,16 @@ export class ReviewsService {
         }
 
         if (dto.action === ReviewActionType.APPROVE) {
-          const advanced = await this.workflow.advance(client, dto.submissionId);
+          const advanced = await this.workflow.advance(
+            client,
+            dto.submissionId,
+          );
           nextStatus = advanced.toStatus as SubmissionStatus;
           enteredRole = advanced.enteredRole;
         } else {
           await client.query(
             `UPDATE submissions SET status = 'rejected' WHERE id = $1::uuid`,
-            [dto.submissionId]
+            [dto.submissionId],
           );
         }
 
@@ -1107,7 +1208,7 @@ export class ReviewsService {
                   ? rejectReason || null
                   : null,
             }),
-          ]
+          ],
         );
         await client.query(
           `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
@@ -1124,7 +1225,7 @@ export class ReviewsService {
                   ? WorkflowEventType.LIBRARY_STAFF_APPROVED
                   : WorkflowEventType.LIBRARY_STAFF_REJECTED,
             }),
-          ]
+          ],
         );
         await client.query("COMMIT");
       } catch (error) {
@@ -1137,7 +1238,9 @@ export class ReviewsService {
       if (dto.action === ReviewActionType.APPROVE) {
         if (enteredRole === WorkflowRole.DIRECTOR) {
           this.workflowMail.notifySafely("director_review", () =>
-            this.workflowMail.notifyDirectorsOnLibraryApproved(dto.submissionId)
+            this.workflowMail.notifyDirectorsOnLibraryApproved(
+              dto.submissionId,
+            ),
           );
         }
         this.workflowMail.notifySafely("student_library_approved", () =>
@@ -1145,7 +1248,7 @@ export class ReviewsService {
             dto.submissionId,
             SubmissionStatus.APPROVED,
             actorName,
-          )
+          ),
         );
       } else {
         this.workflowMail.notifySafely("student_library_rejected", () =>
@@ -1154,7 +1257,7 @@ export class ReviewsService {
             SubmissionStatus.REJECTED,
             actorName,
             rejectReason,
-          )
+          ),
         );
       }
       return { ok: true };
@@ -1167,15 +1270,17 @@ export class ReviewsService {
         dto.action !== ReviewActionType.APPROVE
       ) {
         throw new BadRequestException(
-          "Director step can approve, archive, or reject"
+          "Director step can approve, archive, or reject",
         );
       }
       if (dto.action === ReviewActionType.ARCHIVE && !currentStep.is_last) {
-        throw new BadRequestException("Only the final director step can archive");
+        throw new BadRequestException(
+          "Only the final director step can archive",
+        );
       }
       if (dto.action === ReviewActionType.APPROVE && currentStep.is_last) {
         throw new BadRequestException(
-          "The final director step is archived, not approved"
+          "The final director step is archived, not approved",
         );
       }
 
@@ -1184,7 +1289,7 @@ export class ReviewsService {
         await client.query("BEGIN");
         const current = await client.query<{ status: string }>(
           `SELECT status FROM submissions WHERE id = $1::uuid LIMIT 1 FOR UPDATE`,
-          [dto.submissionId]
+          [dto.submissionId],
         );
         const row = current.rows[0];
         if (!row) {
@@ -1195,7 +1300,10 @@ export class ReviewsService {
           dto.action === ReviewActionType.ARCHIVE ||
           dto.action === ReviewActionType.APPROVE
         ) {
-          const advanced = await this.workflow.advance(client, dto.submissionId);
+          const advanced = await this.workflow.advance(
+            client,
+            dto.submissionId,
+          );
           if (dto.action === ReviewActionType.ARCHIVE && !advanced.archived) {
             throw new BadRequestException("Only final step can archive");
           }
@@ -1216,53 +1324,82 @@ export class ReviewsService {
                 admin_override: true,
                 comment: dto.comment?.trim() || null,
               }),
-            ]
+            ],
           );
 
           if (dto.action === ReviewActionType.ARCHIVE) {
+            await this.ensureStandardizedPdfFileName(client, dto.submissionId);
             const archived = await this.archiveSigning.signArchivedPdf({
               submissionId: dto.submissionId,
               actorSub: user.sub,
               actorName: user.displayName || user.username || "Thư viện",
-              style: resolveSignatureStyle(dto.signatureStyle || (dto.metadata as any)?.signatureStyle || (await this.archiveSigning.defaultSignatureStyle())),
-              watermarkPages: dto.watermarkPages || (dto.metadata as any)?.watermarkPages || (await this.db.query<{ value: string }>("SELECT value FROM system_settings WHERE key = 'signature_watermark_pages' LIMIT 1")).rows[0]?.value || "10",
+              style: resolveSignatureStyle(
+                dto.signatureStyle ||
+                  (dto.metadata as any)?.signatureStyle ||
+                  (await this.archiveSigning.defaultSignatureStyle()),
+              ),
+              watermarkPages:
+                dto.watermarkPages ||
+                (dto.metadata as any)?.watermarkPages ||
+                (
+                  await this.db.query<{ value: string }>(
+                    "SELECT value FROM system_settings WHERE key = 'signature_watermark_pages' LIMIT 1",
+                  )
+                ).rows[0]?.value ||
+                "10",
             });
             const evidence = archived ? signedEvidence(archived) : null;
+            await this.ensureStandardizedPdfFileName(client, dto.submissionId);
 
             await client.query(
               `UPDATE submissions
                SET dspace_publish_status = COALESCE(NULLIF(dspace_publish_status, ''), 'pending')
                WHERE id = $1::uuid`,
-              [dto.submissionId]
+              [dto.submissionId],
             );
 
-            if (evidence) await client.query(
-              `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
+            if (evidence)
+              await client.query(
+                `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
               VALUES ($1, $2, $3, 'director', 'digital_signature_signed', $4::jsonb)`,
-              [
-                randomUUID(),
-                dto.submissionId,
-                user.sub,
-                JSON.stringify({
-                  is_signed: true,
-                  ...evidence,
-                  institution_text: "ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT",
-                  signed_pages_scope: "Tất cả các trang (100% pages)",
-                  signer_name: user.displayName || user.username || "Admin (Bảo lưu)",
-                  signed_at: evidence?.signed_at ?? null,
-                  signature_style: dto.signatureStyle || (dto.metadata as any)?.signatureStyle || "margin_strips",
-                  watermark_pages: dto.watermarkPages || (dto.metadata as any)?.watermarkPages || (await this.db.query<{ value: string }>("SELECT value FROM system_settings WHERE key = 'signature_watermark_pages' LIMIT 1")).rows[0]?.value || "10",
-                  signature_style_name:
-                    dto.signatureStyle === "diagonal" ||
-                    (dto.metadata as any)?.signatureStyle === "diagonal"
-                      ? "Chữ ký số chéo trang"
-                      : dto.signatureStyle === "invisible" ||
-                        (dto.metadata as any)?.signatureStyle === "invisible"
-                      ? "Không chữ ký số (Vô hình)"
-                      : "Chữ ký số 2 bên lề",
-                }),
-              ]
-            );
+                [
+                  randomUUID(),
+                  dto.submissionId,
+                  user.sub,
+                  JSON.stringify({
+                    is_signed: true,
+                    ...evidence,
+                    institution_text:
+                      "ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT",
+                    signed_pages_scope: "Tất cả các trang (100% pages)",
+                    signer_name:
+                      user.displayName || user.username || "Admin (Bảo lưu)",
+                    signed_at: evidence?.signed_at ?? null,
+                    signature_style:
+                      dto.signatureStyle ||
+                      (dto.metadata as any)?.signatureStyle ||
+                      "margin_strips",
+                    watermark_pages:
+                      dto.watermarkPages ||
+                      (dto.metadata as any)?.watermarkPages ||
+                      (
+                        await this.db.query<{ value: string }>(
+                          "SELECT value FROM system_settings WHERE key = 'signature_watermark_pages' LIMIT 1",
+                        )
+                      ).rows[0]?.value ||
+                      "10",
+                    signature_style_name:
+                      dto.signatureStyle === "diagonal" ||
+                      (dto.metadata as any)?.signatureStyle === "diagonal"
+                        ? "Chữ ký số chéo trang"
+                        : dto.signatureStyle === "invisible" ||
+                            (dto.metadata as any)?.signatureStyle ===
+                              "invisible"
+                          ? "Không chữ ký số (Vô hình)"
+                          : "Chữ ký số 2 bên lề",
+                  }),
+                ],
+              );
           }
 
           await client.query(
@@ -1277,12 +1414,12 @@ export class ReviewsService {
                 to: advanced.toStatus as SubmissionStatus,
                 reason: eventType,
               }),
-            ]
+            ],
           );
         } else {
           await client.query(
             `UPDATE submissions SET status = 'rejected' WHERE id = $1::uuid`,
-            [dto.submissionId]
+            [dto.submissionId],
           );
           await client.query(
             `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
@@ -1292,7 +1429,7 @@ export class ReviewsService {
               dto.submissionId,
               user.sub,
               JSON.stringify({ comment: rejectReason }),
-            ]
+            ],
           );
           await client.query(
             `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
@@ -1306,7 +1443,7 @@ export class ReviewsService {
                 to: SubmissionStatus.REJECTED,
                 reason: "director_rejected",
               }),
-            ]
+            ],
           );
         }
         await client.query("COMMIT");
@@ -1327,7 +1464,7 @@ export class ReviewsService {
             dto.submissionId,
             ReviewDecision.APPROVED,
             actorName,
-          )
+          ),
         );
         return {
           ok: true,
@@ -1343,7 +1480,7 @@ export class ReviewsService {
           SubmissionStatus.REJECTED,
           actorName,
           rejectReason,
-        )
+        ),
       );
       return { ok: true };
     }
@@ -1409,7 +1546,7 @@ export class ReviewsService {
                 f.name,
                 s.semester_name,
                 sem.name
-       ORDER BY s.created_at DESC`
+       ORDER BY s.created_at DESC`,
     );
     return result.rows;
   }
@@ -1423,21 +1560,27 @@ export class ReviewsService {
       submissionIds: string[];
       signatureStyle?: SignatureStyleType;
       watermarkPages?: string;
-    }
+    },
   ) {
     if (user.role !== WorkflowRole.ADMIN) {
       throw new ForbiddenException();
     }
     const { submissionIds, watermarkPages } = dto;
-    const signatureStyle = resolveSignatureStyle(dto.signatureStyle || (await this.archiveSigning.defaultSignatureStyle()));
+    const signatureStyle = resolveSignatureStyle(
+      dto.signatureStyle || (await this.archiveSigning.defaultSignatureStyle()),
+    );
     if (!Array.isArray(submissionIds) || submissionIds.length === 0) {
       throw new BadRequestException("Vui lòng chọn ít nhất 1 bài nộp để ký số");
     }
 
-    const defaultWatermarkPages = watermarkPages ||
-      (await this.db.query<{ value: string }>(
-        "SELECT value FROM system_settings WHERE key = 'signature_watermark_pages' LIMIT 1"
-      )).rows[0]?.value || "10";
+    const defaultWatermarkPages =
+      watermarkPages ||
+      (
+        await this.db.query<{ value: string }>(
+          "SELECT value FROM system_settings WHERE key = 'signature_watermark_pages' LIMIT 1",
+        )
+      ).rows[0]?.value ||
+      "10";
 
     const results: Array<{
       submissionId: string;
@@ -1448,16 +1591,24 @@ export class ReviewsService {
     }> = [];
 
     for (const subId of submissionIds) {
-      const subRes = await this.db.query<{ id: string; title: string; status: string }>(
+      const subRes = await this.db.query<{
+        id: string;
+        title: string;
+        status: string;
+      }>(
         `SELECT id, title, status FROM submissions WHERE id = $1::uuid LIMIT 1`,
-        [subId]
+        [subId],
       );
       const sub = subRes.rows[0];
       if (!sub) continue;
 
-      const fileRes = await this.db.query<{ id: string; file_name: string; file_url: string }>(
+      const fileRes = await this.db.query<{
+        id: string;
+        file_name: string;
+        file_url: string;
+      }>(
         `SELECT id, file_name, file_url FROM submission_files WHERE submission_id = $1::uuid AND LOWER(file_name) LIKE '%.pdf' LIMIT 1`,
-        [subId]
+        [subId],
       );
       const file = fileRes.rows[0];
       const warnings: string[] = [];
@@ -1467,11 +1618,11 @@ export class ReviewsService {
           const stampDetail = await this.pdfStamping.stampPdfFileDetailed(
             file.file_url,
             signatureStyle,
-            { watermarkPages: defaultWatermarkPages }
+            { watermarkPages: defaultWatermarkPages },
           );
           if (stampDetail.watermarkPagesMissing.length > 0) {
             warnings.push(
-              `Tệp PDF có ${stampDetail.totalPages} trang, không có trang ${stampDetail.watermarkPagesMissing.join(", ")} để chèn watermark.`
+              `Tệp PDF có ${stampDetail.totalPages} trang, không có trang ${stampDetail.watermarkPagesMissing.join(", ")} để chèn watermark.`,
             );
           }
         } catch (e: any) {
@@ -1498,35 +1649,40 @@ export class ReviewsService {
            SET status = 'archived',
                dspace_publish_status = COALESCE(NULLIF(dspace_publish_status, ''), 'pending')
            WHERE id = $1::uuid`,
-          [subId]
+          [subId],
         );
 
-        if (evidence) await client.query(
-          `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
+        if (evidence)
+          await client.query(
+            `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
           VALUES ($1, $2, $3, 'admin', 'digital_signature_signed', $4::jsonb)`,
-          [
-            randomUUID(),
-            subId,
-            user.sub,
-            JSON.stringify({
-              is_signed: true,
-              is_legacy_batch: true,
-              ...evidence,
-              institution_text: "ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT",
-              signed_pages_scope: "Tất cả các trang (100% pages)",
-              signer_name: user.displayName || user.username || "Quản trị viên (Ký số hàng loạt)",
-              signed_at: evidence?.signed_at ?? null,
-              signature_style: signatureStyle,
-              watermark_pages: defaultWatermarkPages,
-              signature_style_name:
-                signatureStyle === "diagonal"
-                  ? "Chữ ký số chéo trang"
-                  : signatureStyle === "invisible"
-                  ? "Không chữ ký số (Vô hình)"
-                  : "Chữ ký số 2 bên lề",
-            }),
-          ]
-        );
+            [
+              randomUUID(),
+              subId,
+              user.sub,
+              JSON.stringify({
+                is_signed: true,
+                is_legacy_batch: true,
+                ...evidence,
+                institution_text:
+                  "ĐẠI HỌC BÁCH KHOA THÀNH PHỐ HỒ CHÍ MINH - HCMUT",
+                signed_pages_scope: "Tất cả các trang (100% pages)",
+                signer_name:
+                  user.displayName ||
+                  user.username ||
+                  "Quản trị viên (Ký số hàng loạt)",
+                signed_at: evidence?.signed_at ?? null,
+                signature_style: signatureStyle,
+                watermark_pages: defaultWatermarkPages,
+                signature_style_name:
+                  signatureStyle === "diagonal"
+                    ? "Chữ ký số chéo trang"
+                    : signatureStyle === "invisible"
+                      ? "Không chữ ký số (Vô hình)"
+                      : "Chữ ký số 2 bên lề",
+              }),
+            ],
+          );
 
         await client.query(
           `INSERT INTO submission_events (id, submission_id, actor_id, actor_role, event_type, payload)
@@ -1540,7 +1696,7 @@ export class ReviewsService {
               to: "archived",
               reason: "admin_legacy_batch_signed",
             }),
-          ]
+          ],
         );
 
         await client.query("COMMIT");
@@ -1549,7 +1705,9 @@ export class ReviewsService {
           title: sub.title,
           status: "archived",
           signed: evidence !== null,
-          warnings: evidence ? warnings : [...warnings, "Không có file PDF để ký số"],
+          warnings: evidence
+            ? warnings
+            : [...warnings, "Không có file PDF để ký số"],
         });
       } catch (err: any) {
         await client.query("ROLLBACK");
@@ -1573,4 +1731,3 @@ export class ReviewsService {
     };
   }
 }
-
