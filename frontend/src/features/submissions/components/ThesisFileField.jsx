@@ -3,8 +3,9 @@ import { Form, Upload } from "antd";
 import { validateThesisPdf } from "../model/files.js";
 import { InboxOutlined } from "@ant-design/icons";
 import { useSubmissions } from "../SubmissionContext.jsx";
+import PdfPreview from "../workflow/PdfPreview.jsx";
 
-export default function ThesisFileField() {
+export default function ThesisFileField({ field } = {}) {
   const {
     editingSubmissionId,
     t,
@@ -13,26 +14,35 @@ export default function ThesisFileField() {
     renderAlternateField,
     thesisMaxFileSizeMb,
     openProtectedSubmissionFile,
+    submissionForm,
+    editingSubmissionRecord,
+    auth,
   } = useSubmissions();
+  const selectedFiles = Form.useWatch("thesisFile", submissionForm);
+  const localFile = selectedFiles?.[0]?.originFileObj;
   return showNative("thesisFile") ? (
+    <>
     <Form.Item
-      label={t("Thesis PDF")}
+      label={t(field?.label || "Thesis PDF")}
+      required={structuralRequired("thesisFile")}
       name="thesisFile"
       valuePropName="fileList"
       getValueFromEvent={(event) => event?.fileList || []}
       rules={[
         {
-          required: !editingSubmissionId && structuralRequired("thesisFile"),
+          required: structuralRequired("thesisFile") && !editingSubmissionRecord?.files?.some(file => file.fileType === "thesis"),
           message: t("Please upload thesis PDF"),
         },
       ]}
-      extra={
+      extra={<>
+        {field?.helpText && <div>{t(field.helpText)}</div>}
+        {
         editingSubmissionId
           ? t(
               "Current PDF is shown below. Upload a new file only if you want to replace it.",
             )
           : undefined
-      }
+      }</>}
     >
       <Upload.Dragger
         accept=".pdf,application/pdf"
@@ -61,6 +71,9 @@ export default function ThesisFileField() {
         </p>
       </Upload.Dragger>
     </Form.Item>
+    {(localFile || editingSubmissionRecord?.files?.length > 0) && <PdfPreview
+      submissionId={editingSubmissionId} files={editingSubmissionRecord?.files} token={auth.token} localFile={localFile} />}
+    </>
   ) : (
     renderAlternateField("thesisFile")
   );

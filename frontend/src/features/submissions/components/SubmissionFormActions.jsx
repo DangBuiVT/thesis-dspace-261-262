@@ -2,7 +2,7 @@ import { Space, Button } from "antd";
 
 import { useSubmissions } from "../SubmissionContext.jsx";
 
-export default function SubmissionFormActions() {
+export default function SubmissionFormActions({ canSubmit = true, onNext, onBack, onValidationError } = {}) {
   const {
     editingSubmissionId,
     t,
@@ -29,35 +29,34 @@ export default function SubmissionFormActions() {
   const periodReady = periodSelected || isOtherFaculty;
   return (
     <Space wrap>
+      {onBack && <Button onClick={onBack}>{t("Back")}</Button>}
+      {onNext && <Button type="primary" onClick={onNext}>{t("Next")}</Button>}
       {!isFormReadOnly ? (
         <>
           <Button
             onClick={() =>
-              void handleSaveDraft(submissionForm.getFieldsValue())
+              void handleSaveDraft(submissionForm.getFieldsValue(true))
             }
             loading={isSavingDraft}
             disabled={
-              (showNative("submissionPeriodId") &&
-                structuralRequired("submissionPeriodId") &&
-                !periodReady &&
-                !editingSubmissionId) ||
               !canSaveCurrentDraft ||
               isFormReadOnly
             }
           >
             {t("Save draft")}
           </Button>
-          <Button
+          {canSubmit && <Button
             type="primary"
             onClick={() =>
               submissionForm
                 .validateFields()
                 .then(handleSubmitThesis)
-                .catch(() => {})
+                .catch(error => onValidationError?.(error))
             }
             loading={isSubmittingSubmission}
             disabled={
-              (!periodReady && !editingSubmissionId) || !canSubmitCurrentThesis
+              (structuralRequired("submissionPeriodId") && !periodReady && !editingSubmissionId) ||
+              !canSubmitCurrentThesis
             }
           >
             {editingSubmissionStatus === "rejected" ||
@@ -66,7 +65,7 @@ export default function SubmissionFormActions() {
             editingSubmissionStatus === "reviewing"
               ? t("Submit again")
               : t("Submit thesis")}
-          </Button>
+          </Button>}
           {editingSubmissionId && editingSubmissionCapabilities.canDelete ? (
             <Button
               danger

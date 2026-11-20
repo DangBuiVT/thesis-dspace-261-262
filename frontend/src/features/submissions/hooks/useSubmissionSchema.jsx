@@ -1,6 +1,6 @@
 import { requestUploadLimit, requestSubmissionFields } from "../api.js";
 import { Form, Input, Select } from "antd";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   STRUCTURAL_FORM_KEYS,
   STRUCTURAL_NATIVE_TYPE,
@@ -24,6 +24,8 @@ export function useSubmissionSchema({
   setFormFieldsLoaded,
   setSubmissionFormFields,
 }) {
+  const [formSections, setFormSections] = useState([]);
+  const [formSchemaError, setFormSchemaError] = useState("");
   const submissionPeriodId = Form.useWatch(
     "submissionPeriodId",
     submissionForm,
@@ -98,6 +100,7 @@ export function useSubmissionSchema({
     () =>
       (Array.isArray(submissionFormFields) ? submissionFormFields : []).filter(
         (field) =>
+          field.enabled &&
           field.fieldKey !== "author" &&
           field.fieldKey !== "title" &&
           !STRUCTURAL_FORM_KEYS.has(field.fieldKey),
@@ -115,7 +118,7 @@ export function useSubmissionSchema({
       return true;
     }
     const field = structuralField(key);
-    return Boolean(field && field.inputType === STRUCTURAL_NATIVE_TYPE[key]);
+    return Boolean(field?.enabled && field.inputType === STRUCTURAL_NATIVE_TYPE[key]);
   };
 
   const structuralRequired = (key, fallback = true) => {
@@ -123,7 +126,7 @@ export function useSubmissionSchema({
       return fallback;
     }
     const field = structuralField(key);
-    return Boolean(field?.required);
+    return Boolean(field?.enabled && field.required);
   };
 
   const renderAlternateField = (key) => {
@@ -132,7 +135,7 @@ export function useSubmissionSchema({
     }
     const field = structuralField(key);
     if (
-      !field ||
+      !field?.enabled ||
       field.inputType === STRUCTURAL_NATIVE_TYPE[key] ||
       field.inputType === "file"
     ) {
@@ -185,15 +188,16 @@ export function useSubmissionSchema({
         headers: { ...authHeaders(token) },
       });
       const payload = await parseResponse(response);
-      if (!response.ok || !Array.isArray(payload)) {
-        setFormFieldsLoaded(true);
-        return [];
+      if (!response.ok || !Array.isArray(payload?.fields) || !Array.isArray(payload?.sections)) {
+        throw new Error("Unable to load submission form");
       }
-      setSubmissionFormFields(payload);
+      setSubmissionFormFields(payload.fields);
+      setFormSections(payload.sections);
+      setFormSchemaError("");
       setFormFieldsLoaded(true);
-      return payload;
+      return payload.fields;
     } catch {
-      setFormFieldsLoaded(true);
+      setFormSchemaError("Unable to load submission form");
       return [];
     }
   };
@@ -201,6 +205,7 @@ export function useSubmissionSchema({
   const applyFormFieldDefaults = (fields, currentValues = {}) => {
     const patch = {};
     for (const field of fields || []) {
+      if (!field.enabled) continue;
       if (field.fieldKey === "author" || field.fieldKey === "title") {
         continue;
       }
@@ -219,6 +224,8 @@ export function useSubmissionSchema({
     }
   };
   return {
+    formSections,
+    formSchemaError,
     submissionPeriodId,
     archiveFacultyId,
     archiveSemesterId,

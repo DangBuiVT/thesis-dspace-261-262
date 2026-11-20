@@ -275,6 +275,11 @@ export function thesisFields(
     submissionPeriodId: periodId,
     authorIds: JSON.stringify(extra.authorIds ? JSON.parse(extra.authorIds) : [studentId]),
     reviewerIds: JSON.stringify(reviewerIds),
+    metadata: JSON.stringify({
+      submissionAttempt: ["1"],
+      components: ["cover", "approval", "assignment", "acknowledgements", "abstracts", "declaration", "contents", "lists", "fulltext", "publications", "references", "appendices", "biography"],
+      reviewer1: "Reviewer One",
+    }),
     ...stripIds(extra)
   };
 }

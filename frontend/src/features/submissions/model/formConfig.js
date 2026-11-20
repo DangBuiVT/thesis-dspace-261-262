@@ -39,8 +39,8 @@ export const STRUCTURAL_NATIVE_TYPE = {
   archiveSemesterId: "select",
   submissionPeriodId: "select",
   email: "text",
-  titleVi: "text",
-  titleEn: "text",
+  titleVi: "textarea",
+  titleEn: "textarea",
   thesisAdvisors: "text",
   major: "text",
   thesisYear: "year",
@@ -71,3 +71,36 @@ export const defaultArchiveMetadata = (
   language: "vie",
   description: "",
 });
+
+export function decodeFormAnswer(field, value) {
+  if (field.inputType !== "checkboxes" || Array.isArray(value)) return value;
+  try {
+    const parsed = JSON.parse(value || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function configuredFieldRules(field, t) {
+  const label = t(field.label);
+  const arrayAnswer = field.inputType === "checkboxes" || ["authorIds", "reviewerIds"].includes(field.fieldKey) && field.inputType === "select";
+  const rules = field.required
+    ? [{ required: true, ...(arrayAnswer ? { type: "array", min: 1 } : { whitespace: true }), message: t("{{label}} is required", { label }) }]
+    : [];
+  if (field.fieldKey === "email") rules.push({ type: "email", message: t("Please enter a valid email address") });
+  if (field.fieldKey === "thesisYear") rules.push({ pattern: /^\d{4}$/, message: t("Year must be a four-digit number") });
+  if (field.inputType === "checkboxes" && field.validation?.allOptions) {
+    rules.push({ validator: (_, value) => !value?.length || value.length === field.options.length
+      ? Promise.resolve()
+      : Promise.reject(new Error(t("Select all {{count}} components", { count: field.options.length }))) });
+  }
+  return rules;
+}
+
+export function displayFormAnswer(field, value, t) {
+  if (field?.inputType !== "checkboxes") return value;
+  return (decodeFormAnswer(field, value) || [])
+    .map(selected => t(field.options?.find(option => option.value === selected)?.label || selected))
+    .join("; ");
+}

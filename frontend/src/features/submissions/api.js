@@ -44,7 +44,7 @@ export const requestRevertToDraft = (submissionId, options) =>
 export const requestUploadLimit = (options) =>
   request("/api/submissions/upload-limit", options);
 export const requestSubmissionFields = (options) =>
-  request("/api/submissions/form-fields", options);
+  request("/api/submissions/form-schema", options);
 export const requestSubmissionHistory = (submissionId, options) =>
   request(`/api/submissions/${submissionId}/history`, options);
 export const requestSubmissionMetadata = (submissionId, options) =>

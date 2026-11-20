@@ -4,6 +4,12 @@
 
 Sinh viên tạo bản nộp luận văn: metadata + file luận văn PDF.
 
+**Cấu hình biểu mẫu:** Quy định bắt buộc/không bắt buộc/ẩn hiện lấy từ
+[`GET /submissions/form-schema`](../../backend/migrations/README.md). Các cột “Bắt buộc”
+bên dưới mô tả trường portal trước khi áp dụng cấu hình; khi tích hợp hãy dùng
+schema hiện hành. Các câu hỏi của Google Form, cách lưu checklist và reviewer
+names, cấu hình của admin, và hành vi draft được mô tả trong tài liệu schema.
+
 ## Yêu cầu
 
 - **Phương thức:** `POST`

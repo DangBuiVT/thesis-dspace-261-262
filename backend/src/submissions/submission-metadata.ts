@@ -32,8 +32,8 @@ export type NormalizedThesisMetadata = {
 
 export function buildStudentEmail(username: string, emailOverride?: string): string {
   const trimmed = emailOverride?.trim().toLowerCase();
-  if (trimmed) {
-    return trimmed;
+  if (emailOverride !== undefined) {
+    return trimmed || "";
   }
   const local = username.trim().toLowerCase();
   return local.includes("@") ? local : `${local}@hcmut.edu.vn`;

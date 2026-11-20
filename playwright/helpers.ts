@@ -121,6 +121,12 @@ export async function submitViaApi(student: Session, titleEn: string) {
   form.set("authorIds", JSON.stringify([student.user.id]));
   const reviewer = await apiLogin("reviewer1", "review123");
   form.set("reviewerIds", JSON.stringify([reviewer.user.id]));
+  const schema = await (await fetch(`${apiBase()}/submissions/form-schema`, { headers: { Authorization: `Bearer ${student.token}` } })).json();
+  form.set("metadata", JSON.stringify({
+    submissionAttempt: ["1"],
+    components: schema.fields.find((field: { fieldKey: string }) => field.fieldKey === "components").options.map((option: { value: string }) => option.value),
+    reviewer1: "Reviewer One",
+  }));
   const bytes = readFileSync(pdfPath);
   form.set("thesisFile", new Blob([bytes], { type: "application/pdf" }), "thesis-valid.pdf");
   const response = await fetch(`${apiBase()}/submissions`, {
@@ -183,16 +189,21 @@ export async function chooseOption(page: Page, label: string, optionText: string
 
 export async function fillThesisForm(page: Page, titleEn: string, options: { pdf?: boolean } = { pdf: true }) {
   const period = await ensureOpenPeriod();
-  await expect(page.getByRole("combobox", { name: "Faculty", exact: false })).toBeDisabled();
+  if (await page.getByRole("button", { name: "Next", exact: true }).isVisible()) {
+    await page.getByRole("checkbox", { name: "Lần 1", exact: true }).check();
+    const checklist = page.locator(".ant-form-item").filter({ has: page.locator("label", { hasText: "Thesis components" }) });
+    for (const checkbox of await checklist.getByRole("checkbox").all()) await checkbox.check();
+    await page.getByRole("button", { name: "Next", exact: true }).click();
+  }
+  await expect(page.getByRole("combobox", { name: "Faculty", exact: false })).toBeVisible();
   await chooseOption(page, "Semester", period.semesterName);
   await chooseOption(page, "Submission period", period.periodName);
   await page.getByLabel("Thesis title (Vietnamese)").fill("Tieu de e2e");
   await page.getByLabel("Thesis title (English)").fill(titleEn);
-  await page.getByLabel("Advisor(s)").fill("Advisor A");
+  await page.getByLabel("Advisor 1 (full name only)").fill("Advisor A");
   await page.getByLabel("Major").fill("Computer Science");
-  await chooseOption(page, "Reviewers", "Reviewer One");
-  await page.getByLabel("Abstract").fill("E2E abstract");
-  await page.getByLabel("Description").fill("E2E description");
+  await page.getByLabel("Reviewer 1 (full name only)").fill("Reviewer One");
+  await chooseOption(page, "Review assignments", "Reviewer One");
   if (options.pdf) {
     await page.locator("input[type=file]").setInputFiles(pdfPath);
   }

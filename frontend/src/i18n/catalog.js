@@ -1,7 +1,9 @@
 import { workflowCatalog } from "./workflow";
+import { submissionFormCatalog } from "./submissionForm";
 /** Flat VI/EN catalog. Keys are stable English ids; missing keys fall back to English. */
 export const catalog = {
   ...workflowCatalog,
+  ...submissionFormCatalog,
   "Thesis Deposit Portal": { en: "Thesis Deposit Portal", vi: "Cổng nộp luận văn" },
   "Return to Editor": { en: "Return to Editor", vi: "Trả về Thư viện" },
   "Return to Library Editor": { en: "Return to Library Editor", vi: "Yêu cầu Thư viện chỉnh sửa lại" },

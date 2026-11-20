@@ -50,6 +50,8 @@ import {
   WorkflowRole,
 } from "../common/constants/workflow.constants";
 import { UpdateMetadataDto } from "./dto/update-metadata.dto";
+import type { ThesisMetadataFieldsDto } from "./dto/thesis-metadata-fields.dto";
+import { isEmail } from "class-validator";
 
 const uploadsRoot = path.join(process.cwd(), "uploads", "submissions");
 
@@ -397,6 +399,7 @@ export class SubmissionsService {
       required: false,
     });
     await this.assertConfiguredMetadata(meta);
+    await this.assertConfiguredRouting(actor, dto, student.facultyId);
     const formValues = await this.resolveConfigurableFields(
       { ...(dto.metadata || {}), ...dto, abstract: dto.abstract },
       { required: true },
@@ -1223,6 +1226,7 @@ export class SubmissionsService {
         { required: false },
       );
       await this.assertConfiguredMetadata(meta);
+      await this.assertConfiguredRouting(actor, dto, student.facultyId, row.submission_period_id);
       const formValues = await this.resolveConfigurableFields(
         {
           ...(dto.metadata || {}),
@@ -1752,10 +1756,9 @@ export class SubmissionsService {
     reviewerIdsInput: string[] | undefined,
     options: { reviewersRequired: boolean },
   ) {
-    const uniqueAuthorIds = Array.from(new Set(authorIdsInput ?? [studentId]));
-    if (uniqueAuthorIds.length === 0) {
-      throw new BadRequestException("At least one author is required");
-    }
+    // Ownership is an internal invariant, even when the author question is optional/hidden.
+    // Drafts may be saved before an author question has been completed.
+    const uniqueAuthorIds = Array.from(new Set(authorIdsInput?.length ? authorIdsInput : [studentId]));
 
     const authorUsers = [];
     for (const authorId of uniqueAuthorIds) {
@@ -2321,6 +2324,7 @@ export class SubmissionsService {
 
   private async assertConfiguredMetadata(meta: NormalizedThesisMetadata) {
     const checks: Array<[string, string, string]> = [
+      ["email", meta.email, "Email is required"],
       ["titleVi", meta.titleVi, "Vietnamese thesis title is required"],
       ["titleEn", meta.titleEn, "English thesis title is required"],
       ["thesisAdvisors", meta.thesisAdvisors, "Advisor(s) is required"],
@@ -2332,12 +2336,35 @@ export class SubmissionsService {
         throw new BadRequestException(message);
       }
     }
+    if (meta.email && await this.fieldActive("email", true) && !isEmail(meta.email)) {
+      throw new BadRequestException("Please enter a valid email address");
+    }
     if (
       meta.thesisYear &&
       (await this.fieldActive("thesisYear", true)) &&
       !/^\d{4}$/.test(meta.thesisYear)
     ) {
       throw new BadRequestException("Year must be a four-digit number");
+    }
+  }
+
+  private async assertConfiguredRouting(
+    actor: JwtPayload,
+    dto: ThesisMetadataFieldsDto & { submissionPeriodId?: string },
+    studentFacultyId: string | null,
+    existingPeriodId?: string | null,
+  ) {
+    const adminOptions = this.parseAdminSubmissionOptions(actor, dto);
+    const faculty = dto.archiveFacultyId ?? adminOptions.facultyId ?? adminOptions.facultyOtherName ?? studentFacultyId;
+    if (await this.fieldMust("archiveFacultyId", true) && !faculty?.trim()) {
+      throw new BadRequestException("Faculty is required");
+    }
+    if (!adminOptions.isAdmin && dto.archiveFacultyId && await this.fieldActive("archiveFacultyId", true) && dto.archiveFacultyId !== studentFacultyId) {
+      throw new BadRequestException("The faculty must match the student's faculty");
+    }
+    if (!adminOptions.facultyOtherName && await this.fieldMust("archiveSemesterId", true) &&
+        !(dto.archiveSemesterId ?? dto.submissionPeriodId ?? existingPeriodId)?.trim()) {
+      throw new BadRequestException("Semester is required");
     }
   }
 

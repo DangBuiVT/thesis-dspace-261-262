@@ -1,4 +1,4 @@
-import { Typography, Space, Button, Table, Switch, Tag } from "antd";
+import { Typography, Space, Button, Table, Select, Tag } from "antd";
 import { fieldDisplayLabel, inputTypeText } from "../../../i18n/labels";
 const { Paragraph, Text } = Typography;
 import { useAdmin } from "../AdminContext";
@@ -17,7 +17,7 @@ export default function FormFieldsPanel() {
     <>
       <Paragraph type="secondary">
         {t(
-          "Configure every field on the student form. Turn a field off to hide it, or change its input type. Disabled fields are not required when submitting.",
+          "Choose mandatory, optional, or hidden for each question. Student labels and submission validation follow this setting.",
         )}
       </Paragraph>
       <Space style={{ marginBottom: 12 }} wrap>
@@ -63,30 +63,12 @@ export default function FormFieldsPanel() {
             render: (value) => inputTypeText(value, t),
           },
           {
-            title: t("Required"),
-            dataIndex: "required",
-            width: 100,
-            render: (v, row) => (
-              <Switch
-                checked={v}
-                onChange={(checked) =>
-                  void toggleFormFieldFlag(row, { required: checked })
-                }
-              />
-            ),
-          },
-          {
-            title: t("Enabled"),
-            dataIndex: "enabled",
-            width: 100,
-            render: (v, row) => (
-              <Switch
-                checked={v}
-                onChange={(checked) =>
-                  void toggleFormFieldFlag(row, { enabled: checked })
-                }
-              />
-            ),
+            title: t("Question mode"),
+            width: 160,
+            render: (_, row) => <Select aria-label={t("Question mode for {{label}}", { label: fieldDisplayLabel(row, t) })}
+              value={row.mode} style={{ width: 145 }}
+              options={["mandatory", "optional", "hidden"].map(value => ({ value, label: t(value) }))}
+              onChange={mode => void toggleFormFieldFlag(row, { mode })} />,
           },
           {
             title: t("System"),
@@ -110,6 +92,7 @@ export default function FormFieldsPanel() {
                 <Button
                   size="small"
                   danger
+                  disabled={Boolean(row.questionNumber)}
                   onClick={() => deleteFormField(row)}
                 >
                   {t("Delete")}

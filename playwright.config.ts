@@ -11,9 +11,10 @@ export default defineConfig({
   fullyParallel: false,
   use: {
     baseURL: portalUrl,
+    channel: process.env.PLAYWRIGHT_CHANNEL || undefined,
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
-    video: "retain-on-failure"
+    video: process.env.PLAYWRIGHT_VIDEO === "off" ? "off" : "retain-on-failure"
   },
   globalSetup: "./playwright/global-setup.ts",
   webServer: remote

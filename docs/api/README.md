@@ -36,6 +36,8 @@ Tài liệu chi tiết cho từng endpoint backend.
 | POST | `/admin/users/import` | [`admin-users-import.md`](./admin-users-import.md) |
 | DELETE | `/admin/users/:userId` | [`delete-admin-users.md`](./delete-admin-users.md) |
 | POST | `/submissions` | [`post-submissions.md`](./post-submissions.md) |
+| GET | `/submissions/form-schema` | [`Submission form schema`](../../backend/migrations/README.md) |
+| PATCH | `/admin/submission-form-fields/:fieldId` | [`Submission form schema`](../../backend/migrations/README.md) |
 | GET | `/submissions/student/:studentId` | [`get-submissions-student.md`](./get-submissions-student.md) |
 | GET | `/reviews/my-queue` | [`get-reviews-my-queue.md`](./get-reviews-my-queue.md) |
 | POST | `/reviews/action` | [`post-reviews-action.md`](./post-reviews-action.md) |
