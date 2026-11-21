@@ -42,6 +42,10 @@ export const catalog = {
   Dashboard: { en: "Dashboard", vi: "Bảng điều khiển" },
   "Welcome back, {{name}}.": { en: "Welcome back, {{name}}.", vi: "Chào mừng trở lại, {{name}}." },
   "You have been logged out": { en: "You have been logged out", vi: "Bạn đã đăng xuất" },
+  "Your session has expired. Please sign in again.": {
+    en: "Your session has expired. Please sign in again.",
+    vi: "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại."
+  },
   "Login successful": { en: "Login successful", vi: "Đăng nhập thành công" },
   "Login timeout. Please check backend server or Docker network.": {
     en: "Login timeout. Please check backend server or Docker network.",
