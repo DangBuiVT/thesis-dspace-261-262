@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from "@nes
 import { createPgPool } from "../users/db-pool";
 import { SubmissionFormFieldsService } from "../submissions/submission-form-fields.service";
 import { DspaceProvisionerService } from "./dspace-provisioner.service";
+import { formatStandardDspaceFileName } from "./utils/thesis-file-namer.util";
 
 export type DspacePublishResult = {
   dspaceItemId: string;
@@ -231,6 +232,11 @@ export class DspacePublishService {
       thesis_advisors: string | null;
       major: string | null;
       extra_metadata: unknown;
+      student_id: string | null;
+      submitter_name: string | null;
+      semester_name: string | null;
+      faculty_name: string | null;
+      author_user_ids: string[] | null;
     }>(
       `SELECT COALESCE(NULLIF(s.title_en, ''), s.title) AS title,
               s.abstract,
@@ -248,6 +254,14 @@ export class DspacePublishService {
               s.thesis_advisors,
               s.major,
               s.extra_metadata,
+              s.student_id,
+              COALESCE(NULLIF(sem.name, ''), s.semester_name) AS semester_name,
+              COALESCE(NULLIF(f.name, ''), s.faculty_name) AS faculty_name,
+              (
+                SELECT COALESCE(json_agg(sa.user_id ORDER BY sa.sort_order), '[]'::json)
+                FROM submission_authors sa
+                WHERE sa.submission_id = s.id
+              ) AS author_user_ids,
               (
                 SELECT sf.file_url
                 FROM submission_files sf
@@ -259,9 +273,13 @@ export class DspacePublishService {
                 FROM submission_files sf
                 WHERE sf.submission_id = s.id AND sf.file_type = 'thesis'
                 LIMIT 1
-              ) AS thesis_file_name
+              ) AS thesis_file_name,
+              COALESCE(su.display_name, s.author) AS submitter_name
        FROM submissions s
+       LEFT JOIN users su ON su.username = s.student_id
        LEFT JOIN submission_periods sp ON sp.id = s.submission_period_id
+       LEFT JOIN semesters sem ON sem.id = sp.semester_id
+       LEFT JOIN faculties f ON f.id = sem.faculty_id
        WHERE s.id = $1::uuid
        LIMIT 1`,
       [submissionId]
@@ -282,13 +300,29 @@ export class DspacePublishService {
 
     const targetCollectionId = (collectionIdOverride || row.dspace_collection_id || "").trim() || null;
 
+    const standardPdfFileName = formatStandardDspaceFileName({
+      submitterId: row.student_id,
+      submitterName: row.submitter_name,
+      fileType: "thesis",
+      originalFileName: row.thesis_file_name,
+    });
+
+    if (standardPdfFileName && row.thesis_file_url) {
+      await this.db.query(
+        `UPDATE submission_files
+         SET file_name = $1
+         WHERE submission_id = $2::uuid AND file_type = 'thesis'`,
+        [standardPdfFileName, submissionId]
+      );
+    }
+
     if (row.dspace_item_id && !row.dspace_item_id.startsWith("dev-item-")) {
       if (row.thesis_file_url) {
         try {
           const uploaded = await this.dspaceProvisioner.uploadThesisPdfToItem(
             row.dspace_item_id,
             row.thesis_file_url,
-            row.thesis_file_name
+            standardPdfFileName
           );
           await this.markPublishStatus(submissionId, "published", row.dspace_item_id);
           return {
@@ -352,7 +386,7 @@ export class DspacePublishService {
         authors,
         metadata: dspaceMetadata,
         pdfPath: row.thesis_file_url,
-        pdfFileName: row.thesis_file_name
+        pdfFileName: standardPdfFileName
       });
 
       const publishedForReal =

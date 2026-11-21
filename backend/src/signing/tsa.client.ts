@@ -44,11 +44,18 @@ export class TsaClient {
       });
       const body = request.toSchema().toBER(false);
 
-      const response = await fetch(tsaUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/timestamp-query", Accept: "application/timestamp-reply" },
-        body,
-        signal: AbortSignal.timeout(20_000),
+      // Thử lại một lần: lỗi mạng tạm thời (DNS/TLS lần đầu trong container) khá thường gặp.
+      const post = () =>
+        fetch(tsaUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/timestamp-query", Accept: "application/timestamp-reply" },
+          body,
+          signal: AbortSignal.timeout(20_000),
+        });
+      const response = await post().catch(async (first) => {
+        this.logger.warn(`TSA ${tsaUrl} lỗi (${first instanceof Error ? first.message : first}), thử lại`);
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        return post();
       });
       if (!response.ok) {
         throw new Error(`TSA HTTP ${response.status}`);

@@ -3,7 +3,7 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { Alert, Button, Empty, Select, Space, Spin } from "antd";
 import { useI18n } from "../../../i18n/I18nProvider";
 
-const PdfCanvas = lazy(() => import("./PdfCanvas"));
+const PdfCanvas = lazy(() => import("../../../shared/pdf/PdfCanvas"));
 
 export default function PdfPreview({ submissionId, files = [], token, localFile }) {
   const { t } = useI18n();
@@ -64,6 +64,17 @@ export default function PdfPreview({ submissionId, files = [], token, localFile 
   if (!file) return <Empty description={t("No files")} />;
   const isPdf =
     /\.pdf$/i.test(file.fileName || "") || file.mimeType === "application/pdf";
+
+  const currentFileName = file.fileName || "thesis.pdf";
+  const onlineOpenUrl =
+    submissionId && file.id && token
+      ? `/api/submissions/${submissionId}/files/${file.id}/${encodeURIComponent(currentFileName)}?token=${encodeURIComponent(token)}`
+      : undefined;
+  const directDownloadUrl =
+    submissionId && file.id && token
+      ? `/api/submissions/${submissionId}/files/${file.id}/${encodeURIComponent(currentFileName)}?token=${encodeURIComponent(token)}&download=1`
+      : undefined;
+
   return (
     <section className="pdf-preview" aria-label={t("PDF preview")}>
       <Space wrap className="pdf-toolbar">
@@ -77,17 +88,17 @@ export default function PdfPreview({ submissionId, files = [], token, localFile 
           }))}
         />
         <Button
-          href={url || undefined}
+          href={onlineOpenUrl || url || undefined}
           target="_blank"
           rel="noopener noreferrer"
-          disabled={!url}
+          disabled={!onlineOpenUrl && !url}
         >
           {t("Open")}
         </Button>
         <Button
-          href={url || undefined}
-          download={file.fileName}
-          disabled={!url}
+          href={directDownloadUrl || url || undefined}
+          download={currentFileName}
+          disabled={!directDownloadUrl && !url}
         >
           {t("Download")}
         </Button>

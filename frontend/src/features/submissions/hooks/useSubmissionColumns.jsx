@@ -274,7 +274,7 @@ export function useSubmissionColumns({
                 }}
                 loading={fileOpenLoadingKey === `${record.id}:${f.id}`}
                 onClick={() =>
-                  void openProtectedSubmissionFile(record.id, f.id)
+                  void openProtectedSubmissionFile(record.id, f.id, f.fileName)
                 }
               >
                 <Tag style={{ marginInlineEnd: 4 }}>{f.fileType}</Tag>

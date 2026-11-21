@@ -17,6 +17,9 @@ test("E2E-003 reviewer rejects and the student submits again", async ({ page }) 
     await loginUi(page, student.user.username, student.password);
     await expect(page.getByText("Rejected", { exact: true }).first()).toBeVisible();
     await page.getByRole("button", { name: "Edit" }).click();
+    // The form is multi-step: walk to the last step before resubmitting.
+    const next = page.getByRole("button", { name: "Next", exact: true });
+    while (await next.isVisible()) await next.click();
     await page.getByRole("button", { name: "Submit again" }).click();
     await expect(page.getByText("Thesis updated and submitted for review")).toBeVisible();
     await logoutUi(page);

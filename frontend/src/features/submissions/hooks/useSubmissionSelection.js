@@ -76,16 +76,14 @@ export function useSubmissionSelection({
   const applyStudentFaculty = (studentId) => {
     const student = studentOptions.find((item) => item.value === studentId);
     const facultyId = student?.facultyId || "";
-    submissionForm.setFieldsValue({
-      archiveFacultyId: facultyId || undefined,
-      archiveSemesterId: undefined,
-      submissionPeriodId: undefined,
-    });
-    setArchivePeriods([]);
-    if (facultyId) {
+    const currentFacultyId = submissionForm.getFieldValue("archiveFacultyId");
+
+    // Chỉ tự động điền Khoa theo sinh viên nếu Admin chưa chọn Khoa nào
+    if (!currentFacultyId && facultyId) {
+      submissionForm.setFieldsValue({
+        archiveFacultyId: facultyId,
+      });
       void loadArchiveSemesters(facultyId);
-    } else {
-      setArchiveSemesters([]);
     }
   };
 
@@ -100,12 +98,7 @@ export function useSubmissionSelection({
       submissionForm.setFieldsValue({
         studentId: undefined,
         email: "",
-        archiveFacultyId: undefined,
-        archiveSemesterId: undefined,
-        submissionPeriodId: undefined,
       });
-      setArchiveSemesters([]);
-      setArchivePeriods([]);
       setStudentSubmissions([]);
       return;
     }

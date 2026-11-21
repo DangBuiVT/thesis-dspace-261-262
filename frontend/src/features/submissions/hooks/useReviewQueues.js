@@ -51,27 +51,36 @@ export function useReviewQueues({
     }
   };
 
+  // The per-role queue endpoints only serve their own role (and admins). A user can still hold the
+  // permission of another queue (e.g. the director has library_intake and review_academic), which
+  // would answer 403, so those roles simply have no queue of that kind.
+  const loadRoleQueue = (roles, setItems, options) => {
+    const role = auth?.user?.role;
+    if (!roles.includes(role)) {
+      setItems([]);
+      return Promise.resolve();
+    }
+    return loadQueue({ ...options, setItems });
+  };
+
   const loadLibraryQueue = () =>
-    loadQueue({
+    loadRoleQueue(["library_staff", "admin"], setLibraryQueue, {
       request: requestEditorQueue,
       setLoading: setIsLoadingLibraryQueue,
-      setItems: setLibraryQueue,
       errorText: "Unable to load library intake queue",
     });
 
   const loadDirectorQueue = () =>
-    loadQueue({
+    loadRoleQueue(["director", "admin"], setDirectorQueue, {
       request: requestFinalEditorQueue,
       setLoading: setIsLoadingDirectorQueue,
-      setItems: setDirectorQueue,
       errorText: "Unable to load director archive queue",
     });
 
   const loadReviewerQueue = () =>
-    loadQueue({
+    loadRoleQueue(["reviewer", "admin"], setReviewerQueue, {
       request: requestReviewerQueue,
       setLoading: setIsLoadingReviewerQueue,
-      setItems: setReviewerQueue,
       errorText: "Unable to load reviewer queue",
     });
 

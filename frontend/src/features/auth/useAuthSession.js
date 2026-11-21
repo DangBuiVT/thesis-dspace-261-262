@@ -9,8 +9,12 @@ import {
 import { useI18n } from "../../i18n/I18nProvider.jsx";
 import { translateApiMessage } from "../../i18n/api.js";
 import { Form, message } from "antd";
-import { useState, useEffect } from "react";
-import { authHeaders, parseResponse } from "../../shared/api/http.js";
+import { useState, useEffect, useRef } from "react";
+import {
+  authHeaders,
+  parseResponse,
+  SESSION_EXPIRED_EVENT,
+} from "../../shared/api/http.js";
 
 const STORAGE_KEY = "thesis_portal_auth";
 
@@ -118,6 +122,33 @@ export function useAuthSession() {
     } catch (error) {
       localStorage.removeItem(STORAGE_KEY);
     }
+  }, []);
+
+  // The API answers 401 once the token expires (1 hour). Drop the stale session so the user lands on
+  // the login form instead of a signed-in shell where every request fails.
+  const authRef = useRef(null);
+  authRef.current = auth;
+  const expiredTokenRef = useRef(null);
+  useEffect(() => {
+    const onSessionExpired = (event) => {
+      const token = event.detail?.token;
+      if (!token || authRef.current?.token !== token) return;
+      if (expiredTokenRef.current === token) return;
+      expiredTokenRef.current = token;
+      setAuth(null);
+      localStorage.removeItem(STORAGE_KEY);
+      loginForm.resetFields();
+      passwordForm.resetFields();
+      setPasswordModalOpen(false);
+      // Parallel loaders each toast their own "unable to load" error when they hit the same 401;
+      // wait for that burst, clear it and show the single useful message.
+      window.setTimeout(() => {
+        message.destroy();
+        message.warning(t("Your session has expired. Please sign in again."), 6);
+      }, 600);
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, onSessionExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onSessionExpired);
   }, []);
 
   useEffect(() => {

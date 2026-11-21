@@ -5,6 +5,8 @@
 export const SIGNATURE_STYLES = ["margin_strips", "diagonal", "invisible"];
 export const DEFAULT_SIGNATURE_STYLE = "margin_strips";
 export const DEFAULT_WATERMARK_PAGES = "10";
+export const DEFAULT_WATERMARK_TEXT = "TRƯỜNG ĐẠI HỌC BÁCH KHOA - HCMUT";
+export const WATERMARK_TEXT_MAX_LENGTH = 120;
 
 const STYLE_KEY = "bklib_signature_style";
 const PAGES_KEY = "bklib_watermark_pages";

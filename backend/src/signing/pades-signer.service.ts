@@ -123,10 +123,18 @@ export class PadesSigner {
     const errors: string[] = [];
     const buf = Buffer.from(pdfBytes);
     const text = buf.toString("latin1");
-    const br = /\/ByteRange\s*\[\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*\]/.exec(text);
-    if (!br) return { valid: false, coversWholeFile: false, errors: ["Không có chữ ký PDF"] };
+    // PDF có thể chứa nhiều chữ ký: chữ ký cũ của người nộp (đã bị vô hiệu khi hệ thống ghi lại file để
+    // đóng dấu) và chữ ký của hệ thống. Chọn chữ ký phủ đến cuối file; nếu không có thì lấy chữ ký cuối cùng
+    // để vẫn báo lỗi khi file bị sửa sau khi ký.
+    const ranges = [...text.matchAll(/\/ByteRange\s*\[\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*\]/g)].map((m) =>
+      m.slice(1).map(Number)
+    );
+    if (ranges.length === 0) return { valid: false, coversWholeFile: false, errors: ["Không có chữ ký PDF"] };
+    const reachesEof = ([a, c0, c1, len2]: number[]) =>
+      a === 0 && c1 + len2 === buf.length && text[c0] === "<" && text[c1 - 1] === ">";
+    const chosen = [...ranges].reverse().find(reachesEof) ?? ranges[ranges.length - 1];
 
-    const [a, c0, c1, len2] = br.slice(1).map(Number);
+    const [a, c0, c1, len2] = chosen;
     if (a !== 0 || c1 + len2 !== buf.length) {
       errors.push("File bị chỉnh sửa sau khi ký (chữ ký không bao phủ toàn bộ file)");
     }

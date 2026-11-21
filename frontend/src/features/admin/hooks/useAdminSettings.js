@@ -18,6 +18,7 @@ import {
   setStoredSignatureStyle,
   setStoredWatermarkPages,
   DEFAULT_WATERMARK_PAGES,
+  DEFAULT_WATERMARK_TEXT,
 } from "../../../shared/signature.js";
 export function useAdminSettings({
   settings,
@@ -119,7 +120,7 @@ export function useAdminSettings({
     }
   };
   // Defaults used when archiving; the browser copy keeps the pickers in sync immediately.
-  const saveSignatureSettings = async ({ style, pages }) => {
+  const saveSignatureSettings = async ({ style, pages, text }) => {
     const signatureStyle = normalizeSignatureStyle(style);
     const watermarkPages = String(pages ?? "").trim() || DEFAULT_WATERMARK_PAGES;
     if (!/^\d+(\s*-\s*\d+)?(\s*[,;\s]\s*\d+(\s*-\s*\d+)?)*$/.test(watermarkPages)) {
@@ -138,6 +139,8 @@ export function useAdminSettings({
           settings: {
             signature_style: signatureStyle,
             signature_watermark_pages: watermarkPages,
+            signature_watermark_text:
+              String(text ?? "").trim() || DEFAULT_WATERMARK_TEXT,
           },
         }),
       });

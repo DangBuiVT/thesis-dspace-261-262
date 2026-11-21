@@ -1,32 +1,30 @@
-import { requestSubmissionFile } from "../api.js";
-import { authHeaders, parseResponse } from "../../../shared/api/http.js";
 import { message } from "antd";
 
 export function useFileAccess({ setFileOpenLoadingKey, auth, tr }) {
-  const openProtectedSubmissionFile = async (submissionId, fileId) => {
-    const key = `${submissionId}:${fileId}`;
-    setFileOpenLoadingKey(key);
-    try {
-      const response = await requestSubmissionFile(submissionId, fileId, {
-        headers: {
-          ...authHeaders(auth?.token),
-        },
-      });
-      if (!response.ok) {
-        const payload = await parseResponse(response);
-        throw new Error(
-          payload?.message || `Unable to open file (${response.status})`,
-        );
-      }
-      const blob = await response.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      window.open(objectUrl, "_blank", "noopener,noreferrer");
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 120000);
-    } catch (error) {
-      message.error(tr(error.message || "Unable to open file"));
-    } finally {
-      setFileOpenLoadingKey(null);
+  const openProtectedSubmissionFile = async (submissionId, fileId, preferredFileName) => {
+    if (!auth?.token) {
+      message.error(tr ? tr("Authentication required") : "Authentication required");
+      return;
     }
+    const fileName = preferredFileName || "thesis.pdf";
+    const viewUrl = `/api/submissions/${submissionId}/files/${fileId}/${encodeURIComponent(fileName)}?token=${encodeURIComponent(auth.token)}`;
+    window.open(viewUrl, "_blank", "noopener,noreferrer");
   };
-  return { openProtectedSubmissionFile };
+
+  const downloadSubmissionFile = (submissionId, fileId, preferredFileName) => {
+    if (!auth?.token) {
+      message.error(tr ? tr("Authentication required") : "Authentication required");
+      return;
+    }
+    const fileName = preferredFileName || "thesis.pdf";
+    const downloadUrl = `/api/submissions/${submissionId}/files/${fileId}/${encodeURIComponent(fileName)}?token=${encodeURIComponent(auth.token)}&download=1`;
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  return { openProtectedSubmissionFile, downloadSubmissionFile };
 }

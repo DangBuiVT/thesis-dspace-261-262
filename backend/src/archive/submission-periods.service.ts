@@ -86,7 +86,7 @@ export class SubmissionPeriodsService {
     }));
   }
 
-  async listSemestersWithOpenPeriods(facultyId: string) {
+  async listSemestersWithOpenPeriods(facultyId?: string) {
     const result = await this.db.query(
       `SELECT DISTINCT s.id,
               s.name,
@@ -95,33 +95,33 @@ export class SubmissionPeriodsService {
        FROM semesters s
        JOIN faculties f ON f.id = s.faculty_id
        JOIN submission_periods sp ON sp.semester_id = s.id
-       WHERE s.faculty_id = $1::uuid
+       WHERE ($1::uuid IS NULL OR s.faculty_id = $1::uuid)
          AND s.status = 'active'
          AND f.status = 'active'
          AND ${this.openPeriodFilter()}
        ORDER BY s.name ASC`,
-      [facultyId]
+      [facultyId || null]
     );
     if (result.rows.length === 0) {
       return [
         {
           id: "c1000001-0001-4000-8000-000000000001",
           name: "Học kỳ 1 / 2026-2027 (HK261)",
-          facultyId: facultyId,
+          facultyId: facultyId || "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0005",
           facultyName: "Khoa Khoa học và Kỹ thuật Máy tính",
           universityName: HCMUT_NAME
         },
         {
           id: "c1000001-0001-4000-8000-000000000002",
           name: "Học kỳ 2 / 2025-2026 (HK252)",
-          facultyId: facultyId,
+          facultyId: facultyId || "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0005",
           facultyName: "Khoa Khoa học và Kỹ thuật Máy tính",
           universityName: HCMUT_NAME
         },
         {
           id: "c1000001-0001-4000-8000-000000000003",
           name: "Học kỳ Hè 2026 (HK253)",
-          facultyId: facultyId,
+          facultyId: facultyId || "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0005",
           facultyName: "Khoa Khoa học và Kỹ thuật Máy tính",
           universityName: HCMUT_NAME
         }
@@ -137,7 +137,7 @@ export class SubmissionPeriodsService {
     }));
   }
 
-  async listOpenPeriods(facultyId: string, semesterId: string) {
+  async listOpenPeriods(facultyId?: string, semesterId?: string) {
     const result = await this.db.query(
       `SELECT sp.id,
               sp.name,
@@ -151,11 +151,11 @@ export class SubmissionPeriodsService {
        FROM submission_periods sp
        JOIN semesters s ON s.id = sp.semester_id
        JOIN faculties f ON f.id = s.faculty_id
-       WHERE s.faculty_id = $1::uuid
-         AND sp.semester_id = $2::uuid
+       WHERE ($1::uuid IS NULL OR s.faculty_id = $1::uuid)
+         AND ($2::uuid IS NULL OR sp.semester_id = $2::uuid)
          AND ${this.openPeriodFilter()}
        ORDER BY sp.opens_at DESC`,
-      [facultyId, semesterId]
+      [facultyId || null, semesterId || null]
     );
     if (result.rows.length === 0) {
       return [
@@ -165,10 +165,10 @@ export class SubmissionPeriodsService {
           opensAt: new Date(Date.now() - 7 * 86400000).toISOString(),
           closesAt: new Date(Date.now() + 30 * 86400000).toISOString(),
           allowResubmit: true,
-          facultyId: facultyId,
+          facultyId: facultyId || "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0005",
           facultyCode: "CSE",
           facultyName: "Khoa Khoa học và Kỹ thuật Máy tính",
-          semesterId: semesterId,
+          semesterId: semesterId || "c1000001-0001-4000-8000-000000000001",
           semesterCode: "HK261",
           semesterName: "Học kỳ 1 / 2026-2027",
           universityId: "",
@@ -180,10 +180,10 @@ export class SubmissionPeriodsService {
           opensAt: new Date(Date.now() - 7 * 86400000).toISOString(),
           closesAt: new Date(Date.now() + 60 * 86400000).toISOString(),
           allowResubmit: true,
-          facultyId: facultyId,
+          facultyId: facultyId || "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0005",
           facultyCode: "CSE",
           facultyName: "Khoa Khoa học và Kỹ thuật Máy tính",
-          semesterId: semesterId,
+          semesterId: semesterId || "c1000001-0001-4000-8000-000000000001",
           semesterCode: "HK261",
           semesterName: "Học kỳ 1 / 2026-2027",
           universityId: "",

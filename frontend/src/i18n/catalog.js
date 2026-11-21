@@ -5,6 +5,18 @@ export const catalog = {
   ...workflowCatalog,
   ...submissionFormCatalog,
   "Thesis Deposit Portal": { en: "Thesis Deposit Portal", vi: "Cổng nộp luận văn" },
+  "Return to Editor": { en: "Return to Editor", vi: "Trả về Thư viện" },
+  "Return to Library Editor": { en: "Return to Library Editor", vi: "Yêu cầu Thư viện chỉnh sửa lại" },
+  "Returned to Library Editor": { en: "Returned to Library Editor", vi: "Đã trả hồ sơ về cho Cán bộ thư viện biên tập lại" },
+  "Please explain what metadata or details the Library Editor needs to revise.": {
+    en: "Please explain what metadata or details the Library Editor needs to revise.",
+    vi: "Vui lòng giải thích phần metadata hoặc thông tin nào Cán bộ thư viện cần hiệu đính lại."
+  },
+  "e.g., Please revise the English thesis title and standardize Dublin Core keywords.": {
+    en: "e.g., Please revise the English thesis title and standardize Dublin Core keywords.",
+    vi: "Ví dụ: Vui lòng sửa lại tiêu đề tiếng Anh và chuẩn hóa từ khóa Dublin Core."
+  },
+  "Commit to Archive": { en: "Commit to Archive", vi: "Lưu chiểu DSpace" },
   Login: { en: "Login", vi: "Đăng nhập" },
   "HCMUT Google sign-in": { en: "HCMUT Google sign-in", vi: "Đăng nhập Google HCMUT" },
   "Sign in with your verified @hcmut.edu.vn Google account.": {
@@ -30,6 +42,10 @@ export const catalog = {
   Dashboard: { en: "Dashboard", vi: "Bảng điều khiển" },
   "Welcome back, {{name}}.": { en: "Welcome back, {{name}}.", vi: "Chào mừng trở lại, {{name}}." },
   "You have been logged out": { en: "You have been logged out", vi: "Bạn đã đăng xuất" },
+  "Your session has expired. Please sign in again.": {
+    en: "Your session has expired. Please sign in again.",
+    vi: "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại."
+  },
   "Login successful": { en: "Login successful", vi: "Đăng nhập thành công" },
   "Login timeout. Please check backend server or Docker network.": {
     en: "Login timeout. Please check backend server or Docker network.",
@@ -1542,5 +1558,27 @@ export const catalog = {
   "Certificate": { en: "Certificate", vi: "Chứng thư" },
   "SIGNING_KEY_PATH / SIGNING_CERT_PATH; without them a development CA is generated.": { en: "SIGNING_KEY_PATH / SIGNING_CERT_PATH; without them a development CA is generated.", vi: "SIGNING_KEY_PATH / SIGNING_CERT_PATH; nếu thiếu sẽ tự sinh CA phát triển." },
   "Watermark pages must be numbers, lists or ranges": { en: "Watermark pages must be numbers, lists or ranges", vi: "Trang watermark phải là số, danh sách hoặc khoảng" },
-  "Digital signature configuration saved": { en: "Digital signature configuration saved", vi: "Đã lưu cấu hình chữ ký số" }
+  "Digital signature configuration saved": { en: "Digital signature configuration saved", vi: "Đã lưu cấu hình chữ ký số" },
+  "A grey strip with the logo and wording runs along both margins of every page without covering the text.": { en: "A grey strip with the logo and wording runs along both margins of every page without covering the text.", vi: "Dải xám gồm logo và dòng chữ chạy dọc hai bên lề mọi trang, không che nội dung." },
+  "A translucent ribbon with the wording crosses the centre of every page at 45 degrees.": { en: "A translucent ribbon with the wording crosses the centre of every page at 45 degrees.", vi: "Dòng chữ mờ chạy chéo 45 độ qua giữa mọi trang." },
+  "Watermark wording": { en: "Watermark wording", vi: "Nội dung chữ watermark" },
+  "Printed next to the logo in the margin strips and on the diagonal ribbon. Leave it empty to use the default wording.": { en: "Printed next to the logo in the margin strips and on the diagonal ribbon. Leave it empty to use the default wording.", vi: "In cạnh logo ở dải lề và trên dải chéo. Để trống để dùng nội dung mặc định." },
+  "Default": { en: "Default", vi: "Mặc định" },
+  "The logo is placed at low opacity in the centre of the listed pages only (for example 10, or 10,15, or 10-12), and in grey inside the margin strips. Pages the PDF does not have are skipped with a warning.": { en: "The logo is placed at low opacity in the centre of the listed pages only (for example 10, or 10,15, or 10-12), and in grey inside the margin strips. Pages the PDF does not have are skipped with a warning.", vi: "Logo được đặt mờ ở giữa chỉ các trang liệt kê (ví dụ 10, hoặc 10,15, hoặc 10-12) và ở dạng xám trong dải lề. Trang không tồn tại trong PDF sẽ bị bỏ qua kèm cảnh báo." },
+  "Watermark logo": { en: "Watermark logo", vi: "Logo watermark" },
+  "Uploaded logo": { en: "Uploaded logo", vi: "Logo đã tải lên" },
+  "Default logo": { en: "Default logo", vi: "Logo mặc định" },
+  "Upload logo image": { en: "Upload logo image", vi: "Tải ảnh logo lên" },
+  "Use default logo": { en: "Use default logo", vi: "Dùng logo mặc định" },
+  "PNG with a transparent background works best. Saved immediately.": { en: "PNG with a transparent background works best. Saved immediately.", vi: "Nên dùng PNG nền trong suốt. Được lưu ngay khi tải lên." },
+  "Watermark logo updated": { en: "Watermark logo updated", vi: "Đã cập nhật logo watermark" },
+  "Default logo restored": { en: "Default logo restored", vi: "Đã khôi phục logo mặc định" },
+  "Watermark preview": { en: "Watermark preview", vi: "Xem trước watermark" },
+  "Sample pages: page 1 shows the style on an ordinary page, the next page is the first page that gets the centred logo. Unsaved wording and pages are previewed too.": { en: "Sample pages: page 1 shows the style on an ordinary page, the next page is the first page that gets the centred logo. Unsaved wording and pages are previewed too.", vi: "Trang mẫu: trang 1 thể hiện kiểu chữ ký trên trang thường, trang tiếp theo là trang đầu tiên có logo ở giữa. Nội dung và số trang chưa lưu cũng được xem trước." },
+  "Unable to build the watermark preview": { en: "Unable to build the watermark preview", vi: "Không thể tạo bản xem trước watermark" },
+  "Unable to upload the logo": { en: "Unable to upload the logo", vi: "Không thể tải logo lên" },
+  "Unable to restore the default logo": { en: "Unable to restore the default logo", vi: "Không thể khôi phục logo mặc định" },
+  "The selected file is not a readable image": { en: "The selected file is not a readable image", vi: "Tệp đã chọn không phải ảnh đọc được" },
+  "Logo must be a PNG image": { en: "Logo must be a PNG image", vi: "Logo phải là ảnh PNG" },
+  "Logo must be 2 MB or smaller": { en: "Logo must be 2 MB or smaller", vi: "Logo phải nhỏ hơn hoặc bằng 2 MB" }
 };

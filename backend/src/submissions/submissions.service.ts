@@ -1,6 +1,7 @@
 import { Readable } from 'node:stream';
 import { ArchiveSigningService } from '../signing/archive-signing.service';
 import { PdfStampingService, SignatureStyleType } from '../reviews/pdf-stamping.service';
+import { formatStandardDspaceFileName } from "../archive/utils/thesis-file-namer.util";
 import {
   BadRequestException,
   ForbiddenException,
@@ -202,7 +203,11 @@ export class SubmissionsService {
   private assertPeriodMatchesStudentFaculty(
     student: { facultyId: string | null },
     periodFacultyId: string,
+    actor?: JwtPayload,
   ) {
+    if (actor && this.isAdminActor(actor)) {
+      return;
+    }
     if (!student.facultyId) {
       throw new BadRequestException(
         "This student is not assigned to a faculty",
@@ -542,10 +547,16 @@ export class SubmissionsService {
         thesisFile,
         targetDirectory,
       );
+      const standardFileName = formatStandardDspaceFileName({
+        submitterId: dto.studentId,
+        submitterName: student.displayName,
+        fileType: "thesis",
+        originalFileName: thesisFile.originalname,
+      });
       savedFiles.push({
         id: randomUUID(),
         submission_id: submissionId,
-        file_name: thesisFile.originalname,
+        file_name: standardFileName || thesisFile.originalname,
         file_url: thesisFilePath,
         file_type: "thesis",
       });
@@ -909,12 +920,14 @@ export class SubmissionsService {
       if (dto.studentId && dto.studentId !== row.student_id) {
         throw new BadRequestException("Cannot change the submitting student");
       }
-      await this.assertStudentSubmissionAction(
-        client,
-        submissionId,
-        row.student_id,
-        "edit",
-      );
+      if (!this.isAdminActor(actor)) {
+        await this.assertStudentSubmissionAction(
+          client,
+          submissionId,
+          row.student_id,
+          "edit",
+        );
+      }
 
       const student = await this.usersService.findById(row.student_id);
       if (!student) {
@@ -1683,12 +1696,16 @@ export class SubmissionsService {
         throw new NotFoundException("Submission not found");
       }
       this.assertCanSubmitForStudent(actor, row.student_id);
-      const { status } = await this.assertStudentSubmissionAction(
-        client,
-        submissionId,
-        row.student_id,
-        "revert_draft",
-      );
+      let status = row.status;
+      if (!this.isAdminActor(actor)) {
+        const actionResult = await this.assertStudentSubmissionAction(
+          client,
+          submissionId,
+          row.student_id,
+          "revert_draft",
+        );
+        status = actionResult.status;
+      }
 
       await client.query(
         `UPDATE submissions SET status = 'draft' WHERE id = $1::uuid`,
@@ -1844,10 +1861,28 @@ export class SubmissionsService {
       await this.deleteFileSilently(file.file_url);
     }
     const thesisPath = await this.moveUploadedFile(thesisFile, targetDirectory);
+    const subRes = await (client as any).query(
+      `SELECT s.student_id, COALESCE(su.display_name, s.author) AS submitter_name
+       FROM submissions s
+       LEFT JOIN users su ON su.username = s.student_id
+       WHERE s.id = $1::uuid
+       LIMIT 1`,
+      [submissionId],
+    );
+    const subRow = subRes?.rows?.[0];
+    const standardName = subRow
+      ? formatStandardDspaceFileName({
+          submitterId: subRow.student_id,
+          submitterName: subRow.submitter_name,
+          fileType: "thesis",
+          originalFileName: thesisFile.originalname,
+        })
+      : thesisFile.originalname;
+
     await client.query(
       `INSERT INTO submission_files (id, submission_id, file_name, file_url, file_type)
        VALUES ($1, $2::uuid, $3, $4, 'thesis')`,
-      [randomUUID(), submissionId, thesisFile.originalname, thesisPath],
+      [randomUUID(), submissionId, standardName || thesisFile.originalname, thesisPath],
     );
   }
 
@@ -2157,10 +2192,13 @@ export class SubmissionsService {
     // Bản đã lưu chiểu (đã đóng dấu + ký PAdES + dấu thời gian) là file cố định, trả nguyên bản.
     const signedCopy = await this.archiveSigning.latestSignedPath(submissionId, fileId);
     if (signedCopy) {
+      const signedFileName = signedCopy.fileName.startsWith("[SIGNED]_")
+        ? signedCopy.fileName
+        : `[SIGNED]_${signedCopy.fileName}`;
       return {
         stream: createReadStream(signedCopy.filePath),
         contentType: "application/pdf",
-        fileName: `[SIGNED]_${signedCopy.fileName}`,
+        fileName: signedFileName,
       };
     }
 
@@ -2195,7 +2233,9 @@ export class SubmissionsService {
           return {
             stream: stampedStream,
             contentType,
-            fileName: isSigned ? `[SIGNED]_${row.file_name}` : row.file_name,
+            // Không có bản ký PAdES thật (bản xem trước hoặc bài lưu chiểu từ trước khi có ký số):
+            // chỉ là PDF đã đóng dấu hình ảnh, nên không gắn nhãn [SIGNED].
+            fileName: row.file_name,
           };
         } catch (e) {
           // fallback
@@ -2365,9 +2405,19 @@ export class SubmissionsService {
     return result.rows;
   }
 
-  async updateMetadata(user: JwtPayload, submissionId: string, dto: UpdateMetadataDto) {
-    if (user.role !== WorkflowRole.LIBRARY_STAFF && user.role !== WorkflowRole.ADMIN) {
-      throw new ForbiddenException("Only library staff can edit metadata");
+  async updateMetadata(
+    user: JwtPayload,
+    submissionId: string,
+    dto: UpdateMetadataDto,
+  ) {
+    if (
+      user.role !== WorkflowRole.LIBRARY_STAFF &&
+      user.role !== WorkflowRole.DIRECTOR &&
+      user.role !== WorkflowRole.ADMIN
+    ) {
+      throw new ForbiddenException(
+        "Only Library Staff, Director, or Admin have permission to compile metadata",
+      );
     }
     const fieldMap: Record<string, string> = {
       titleVi: "title_vi", titleEn: "title_en", abstract: "abstract", keywords: "keywords",
@@ -2385,9 +2435,20 @@ export class SubmissionsService {
       );
       const row = result.rows[0];
       if (!row) throw new NotFoundException("Submission not found");
-      if (row.status !== SubmissionStatus.REVIEWING || row.active_role !== WorkflowRole.LIBRARY_STAFF) {
-        throw new BadRequestException("This submission is not waiting for the Editor");
+      const isDirector = user.role === WorkflowRole.DIRECTOR;
+      const isLibraryStaff = user.role === WorkflowRole.LIBRARY_STAFF;
+      // Library staff (Editor) may only edit while the submission sits at the Editor step,
+      // not while it is still with the Reviewer or already forwarded to the Final Editor.
+      const canEdit =
+        (isLibraryStaff &&
+          row.status === SubmissionStatus.REVIEWING &&
+          row.active_role === WorkflowRole.LIBRARY_STAFF) ||
+        (isDirector && (row.status === SubmissionStatus.APPROVED || row.status === SubmissionStatus.REVIEWING)) ||
+        user.role === WorkflowRole.ADMIN;
+      if (!canEdit) {
+        throw new BadRequestException("This submission is not waiting for metadata compilation or director approval");
       }
+
       const updates: Record<string, string> = {};
       for (const [key, value] of Object.entries(dto)) {
         if (value == null || key === "comment") continue;

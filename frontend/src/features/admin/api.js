@@ -31,3 +31,9 @@ export const requestGroupMembers = (groupId, options) =>
   request(`/api/admin/groups/${groupId}/members`, options);
 export const requestGroupGrants = (groupId, options) =>
   request(`/api/admin/groups/${groupId}/grants`, options);
+export const requestWatermarkLogo = (variant, options) =>
+  request(`/api/admin/signature/logo?variant=${variant}`, options);
+export const requestWatermarkLogoUpload = (options) =>
+  request("/api/admin/signature/logo", options);
+export const requestWatermarkPreview = (options) =>
+  request("/api/admin/signature/preview", options);
